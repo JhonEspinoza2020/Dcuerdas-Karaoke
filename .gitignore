@@ -1,0 +1,30 @@
+# Secrets — nunca subir
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node / Vite
+node_modules/
+dist/
+frontend/dist/
+frontend/node_modules/
+*.local
+
+# Temp / Cursor
+.tmp-*
+.cursor/
