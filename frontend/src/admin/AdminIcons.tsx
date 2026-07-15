@@ -104,3 +104,58 @@ export function ClockIcon({ size = 20, className }: IconProps) {
     </svg>
   );
 }
+
+/** Silueta de onda de sonido (animada con CSS .sound-wave-svg). */
+export function SoundWaveSilhouette({
+  width = 44,
+  height = 22,
+  className,
+}: {
+  width?: number;
+  height?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      className={className}
+      width={width}
+      height={height}
+      viewBox="0 0 88 44"
+      fill="currentColor"
+      aria-hidden
+    >
+      {/* Posición fija en g exterior; el interior escala en Y (animación). */}
+      <g transform="translate(8 22)">
+        <g className="sound-lobe sound-lobe-1">
+          <ellipse cx="0" cy="0" rx="5" ry="7" />
+        </g>
+      </g>
+      <g transform="translate(22 22)">
+        <g className="sound-lobe sound-lobe-2">
+          <ellipse cx="0" cy="0" rx="6.5" ry="14" />
+        </g>
+      </g>
+      <g transform="translate(38 22)">
+        <g className="sound-lobe sound-lobe-3">
+          <ellipse cx="0" cy="0" rx="7.5" ry="20" />
+        </g>
+      </g>
+      <g transform="translate(50 22)">
+        <g className="sound-lobe sound-lobe-4">
+          <ellipse cx="0" cy="0" rx="7.5" ry="20" />
+        </g>
+      </g>
+      <g transform="translate(66 22)">
+        <g className="sound-lobe sound-lobe-5">
+          <ellipse cx="0" cy="0" rx="6.5" ry="14" />
+        </g>
+      </g>
+      <g transform="translate(80 22)">
+        <g className="sound-lobe sound-lobe-6">
+          <ellipse cx="0" cy="0" rx="5" ry="7" />
+        </g>
+      </g>
+    </svg>
+  );
+}
+

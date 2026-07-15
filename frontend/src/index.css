@@ -374,21 +374,6 @@ a { color: inherit; }
   text-align: center;
 }
 
-.exitos-local {
-  margin-bottom: 20px;
-}
-.exitos-local-titulo {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.exitos-local-hint {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  margin: 0 0 12px;
-}
-
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .results { display: flex; flex-direction: column; gap: 10px; }
@@ -1012,6 +997,55 @@ a { color: inherit; }
   cursor: pointer;
   text-align: left;
   transition: background 0.15s, color 0.15s;
+}
+.admin-sidebar-nav .admin-nav-label {
+  flex: 1;
+  min-width: 0;
+}
+.admin-nav-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg, #111);
+}
+.nav-sound-wave {
+  flex-shrink: 0;
+  opacity: 0.4;
+  margin-left: auto;
+}
+.nav-sound-wave.is-playing {
+  opacity: 1;
+}
+.nav-sound-wave .sound-lobe {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.nav-sound-wave.is-playing .sound-lobe-1 { animation: soundPulse 0.9s ease-in-out infinite; }
+.nav-sound-wave.is-playing .sound-lobe-2 { animation: soundPulse 0.75s ease-in-out 0.08s infinite; }
+.nav-sound-wave.is-playing .sound-lobe-3 { animation: soundPulse 0.65s ease-in-out 0.16s infinite; }
+.nav-sound-wave.is-playing .sound-lobe-4 { animation: soundPulse 0.65s ease-in-out 0.04s infinite; }
+.nav-sound-wave.is-playing .sound-lobe-5 { animation: soundPulse 0.75s ease-in-out 0.12s infinite; }
+.nav-sound-wave.is-playing .sound-lobe-6 { animation: soundPulse 0.9s ease-in-out 0.2s infinite; }
+@keyframes soundPulse {
+  0%, 100% { transform: scaleY(0.45); }
+  35% { transform: scaleY(1.05); }
+  55% { transform: scaleY(0.7); }
+  75% { transform: scaleY(1); }
 }
 .admin-sidebar-nav button:hover {
   background: rgba(255, 255, 255, 0.05);

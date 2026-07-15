@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, es, registrarVisita, useAuth, type KaraokeEstado, type TipoZona } from "@dcuerdas/shared";
+import { useParams, useSearchParams } from "react-router-dom";
+import { api, es, registrarVisita, useAuth, type KaraokeEstado } from "@dcuerdas/shared";
 import { RegistroStep } from "../components/RegistroStep";
 import { CartaStep } from "../components/CartaStep";
 import { KaraokeStep } from "../components/KaraokeStep";
@@ -27,14 +27,11 @@ type Tab = "karaoke" | "carta";
 export function MesaPage() {
   const { numero } = useParams<{ numero: string }>();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const token = searchParams.get("t") ?? "";
   const numeroMesa = Number(numero);
 
   const [estado, setEstado] = useState<KaraokeEstado | null>(null);
   const [mesaOk, setMesaOk] = useState(false);
-  const [tipo, setTipo] = useState<TipoZona>("mesa");
-  const [etiquetaMesa, setEtiquetaMesa] = useState("");
   const [error, setError] = useState("");
   const [datos, setDatos] = useState<ClienteDatos>(DATOS_VACIOS);
   const [registrado, setRegistrado] = useState(false);
@@ -56,15 +53,17 @@ export function MesaPage() {
       setError(es.errores.tokenInvalido);
       return;
     }
+    if (numeroMesa < 1 || numeroMesa > 12) {
+      setError(es.errores.tokenInvalido);
+      return;
+    }
     api.validarMesa(numeroMesa, token)
       .then((info) => {
         if (info.tipo === "karaoke") {
-          navigate(`/box/${numeroMesa}?t=${token}`, { replace: true });
+          setError("Esta zona ya no está disponible.");
           return;
         }
         setMesaOk(true);
-        setTipo(info.tipo);
-        setEtiquetaMesa(info.etiqueta ?? `Mesa ${info.numero_mesa}`);
         const saved = cargarDatos(numeroMesa);
         if (saved?.nombre?.trim()) {
           setDatos(saved);
@@ -74,7 +73,7 @@ export function MesaPage() {
         }
       })
       .catch(() => setError(es.errores.tokenInvalido));
-  }, [numeroMesa, token, navigate]);
+  }, [numeroMesa, token]);
 
   const irA = (nuevo: Tab) => {
     setTab(nuevo);
@@ -87,9 +86,6 @@ export function MesaPage() {
     setRegistrado(true);
     irA("karaoke");
   };
-
-  const badge = etiquetaMesa || `Mesa ${numeroMesa}`;
-  const tabMusica = tipo === "karaoke" ? es.karaoke.pasoLabel : es.musica.pasoLabel;
 
   if (!numeroMesa || !token) {
     return (
@@ -106,7 +102,7 @@ export function MesaPage() {
     <div className="app">
       <header className="header">
         <BrandLogo size="header" />
-        {mesaOk && <div className="mesa-badge">{badge}</div>}
+        {mesaOk && <div className="mesa-badge">Mesa {numeroMesa}</div>}
       </header>
 
       {error && <div className="error-msg">{error}</div>}
@@ -127,7 +123,7 @@ export function MesaPage() {
               className={tab === "karaoke" ? "active" : ""}
               onClick={() => irA("karaoke")}
             >
-              <MusicIcon size={18} /> {tabMusica}
+              <MusicIcon size={18} /> {es.musica.pasoLabel}
             </button>
             <button
               type="button"
@@ -149,7 +145,7 @@ export function MesaPage() {
               numeroMesa={numeroMesa}
               token={token}
               nombre={datos.nombre}
-              modo={tipo}
+              modo="musica"
               onContinuar={() => irA("carta")}
             />
           )}

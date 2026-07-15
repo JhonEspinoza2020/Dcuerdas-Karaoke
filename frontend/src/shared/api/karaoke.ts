@@ -66,7 +66,9 @@ const busquedaCache = new Map<string, { data: VideoResult[]; expira: number }>()
 const CACHE_CLIENTE_MS = 10 * 60 * 1000; // 10 min en el navegador
 
 function normalizarBusqueda(q: string, _modo?: TipoZona): string {
-  return q.trim().toLowerCase().replace(/\s+/g, " ");
+  let t = q.trim().toLowerCase().replace(/\s+/g, " ");
+  if (t.length >= 2 && !/\bkaraoke\b/i.test(t)) t = `${t} karaoke`;
+  return t;
 }
 
 export const api = {
@@ -78,8 +80,8 @@ export const api = {
   validarMesa: (numero_mesa: number, token: string) =>
     post<MesaInfo>("validar-mesa", { numero_mesa, token }),
 
-  buscarYoutube: async (numero_mesa: number, token: string, q: string, modo: TipoZona = "karaoke") => {
-    const key = `${modo}:${normalizarBusqueda(q, modo)}`;
+  buscarYoutube: async (numero_mesa: number, token: string, q: string, _modo: TipoZona = "musica") => {
+    const key = `musica:${normalizarBusqueda(q)}`;
     const cached = busquedaCache.get(key);
     if (cached && cached.expira > Date.now()) {
       return { resultados: cached.data, total: cached.data.length };
@@ -88,7 +90,7 @@ export const api = {
       numero_mesa,
       token,
       q,
-      modo,
+      modo: "musica",
     });
     if (res.resultados.length > 0) {
       busquedaCache.set(key, { data: res.resultados, expira: Date.now() + CACHE_CLIENTE_MS });
@@ -110,6 +112,16 @@ export const api = {
     fetch(FN("cola-activa"), {
       headers: { Authorization: `Bearer ${accessToken}`, apikey: ANON },
     }).then((r) => r.json() as Promise<ColaItem[]>),
+
+  /** Videos ya tocados / en caché BD → música de ambiente del local. */
+  radioCasa: async (accessToken: string) => {
+    const res = await fetch(FN("radio-casa"), {
+      headers: { Authorization: `Bearer ${accessToken}`, apikey: ANON },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error radio");
+    return data as { videos: { video_id: string; titulo: string; preferida?: boolean }[]; total: number };
+  },
 
   actualizarEstado: async (accessToken: string, cancion_id: number, estado: string) => {
     const res = await fetch(FN("actualizar-estado-cola"), {

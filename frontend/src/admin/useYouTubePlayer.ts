@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 type OnEnded = () => void;
 type OnError = (code: number) => void;
+type OnPlayingChange = (playing: boolean) => void;
 
 function waitForYT(): Promise<YT> {
   return new Promise((resolve) => {
@@ -23,16 +24,22 @@ function waitForYT(): Promise<YT> {
   });
 }
 
-export function useYouTubePlayer(onEnded: OnEnded, onError?: OnError) {
+export function useYouTubePlayer(
+  onEnded: OnEnded,
+  onError?: OnError,
+  onPlayingChange?: OnPlayingChange,
+) {
   const playerRef = useRef<YTPlayer | null>(null);
   const onEndedRef = useRef(onEnded);
   const onErrorRef = useRef(onError);
+  const onPlayingChangeRef = useRef(onPlayingChange);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     onEndedRef.current = onEnded;
     onErrorRef.current = onError;
-  }, [onEnded, onError]);
+    onPlayingChangeRef.current = onPlayingChange;
+  }, [onEnded, onError, onPlayingChange]);
 
   useEffect(() => {
     let destroyed = false;
@@ -51,11 +58,25 @@ export function useYouTubePlayer(onEnded: OnEnded, onError?: OnError) {
           iv_load_policy: 3,
         },
         events: {
-          onReady: () => setReady(true),
+          onReady: () => {
+            if (!destroyed) setReady(true);
+          },
           onStateChange: (e) => {
-            if (e.data === YT.PlayerState.ENDED) onEndedRef.current();
+            if (e.data === YT.PlayerState.ENDED) {
+              onPlayingChangeRef.current?.(false);
+              onEndedRef.current();
+              return;
+            }
+            if (e.data === YT.PlayerState.PAUSED) {
+              onPlayingChangeRef.current?.(false);
+              return;
+            }
+            if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING) {
+              onPlayingChangeRef.current?.(true);
+            }
           },
           onError: (e) => {
+            onPlayingChangeRef.current?.(false);
             onErrorRef.current?.(e.data);
           },
         },
@@ -63,30 +84,31 @@ export function useYouTubePlayer(onEnded: OnEnded, onError?: OnError) {
     });
     return () => {
       destroyed = true;
-      playerRef.current?.destroy();
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        /* ignore */
+      }
       playerRef.current = null;
     };
   }, []);
 
   const play = (videoId: string) => {
     const p = playerRef.current;
-    if (!p) return;
-    // Salir de modo playlist/cliente anterior antes de una canción pedida.
-    p.stopVideo();
+    if (!p?.loadVideoById) return;
+    // string simple: más compatible que el objeto
     p.loadVideoById(videoId);
-    p.playVideo();
+    window.setTimeout(() => {
+      try {
+        p.playVideo?.();
+      } catch {
+        /* ignore */
+      }
+    }, 50);
   };
 
-  /** Radio de la casa: lista fija mezclada (nunca el video del cliente anterior). */
-  const playRadio = (videoIds: string[]) => {
-    const p = playerRef.current;
-    if (!p || videoIds.length === 0) return;
-    p.stopVideo();
-    const mezclada = [...videoIds].sort(() => Math.random() - 0.5);
-    p.loadPlaylist(mezclada, 0, 0);
-    p.setShuffle(true);
-    p.setLoop(true);
-    p.playVideo();
+  const resume = () => {
+    playerRef.current?.playVideo?.();
   };
 
   const setVolume = (vol: number) => {
@@ -95,5 +117,5 @@ export function useYouTubePlayer(onEnded: OnEnded, onError?: OnError) {
 
   const getVolume = () => playerRef.current?.getVolume?.() ?? 100;
 
-  return { ready, play, playRadio, setVolume, getVolume };
+  return { ready, play, resume, setVolume, getVolume };
 }

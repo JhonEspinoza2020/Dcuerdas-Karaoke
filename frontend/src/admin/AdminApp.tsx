@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { es, useAuth } from "@dcuerdas/shared";
+import { adminApi, es, supabase, useAuth } from "@dcuerdas/shared";
 import { Reproductor } from "./Reproductor";
 import { ColaPanel } from "./ColaPanel";
 import { QRsPanel } from "./QRsPanel";
@@ -17,6 +17,7 @@ import {
   QrIcon,
   OrderIcon,
   LogoutIcon,
+  SoundWaveSilhouette,
 } from "./AdminIcons";
 
 type Tab = "dashboard" | "clientes" | "pedidos" | "cola" | "reproductor" | "qrs";
@@ -36,6 +37,38 @@ export function AdminApp() {
   const [error, setError] = useState("");
   const [logueando, setLogueando] = useState(false);
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
+  const [musicaSonando, setMusicaSonando] = useState(false);
+  const [pedidosActivos, setPedidosActivos] = useState(0);
+
+  const cargarPedidosBadge = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const data = await adminApi.pedidos(accessToken);
+      if (!Array.isArray(data)) return;
+      const n = data.filter(
+        (p) => p.estado === "pendiente" || p.estado === "en_preparacion" || p.estado === "listo",
+      ).length;
+      setPedidosActivos(n);
+    } catch {
+      /* silencioso: el badge no debe romper el panel */
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!esAdmin || !accessToken) return;
+    cargarPedidosBadge();
+    const ch = supabase
+      .channel("admin-pedidos-badge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
+        cargarPedidosBadge();
+      })
+      .subscribe();
+    const id = window.setInterval(cargarPedidosBadge, 15000);
+    return () => {
+      supabase.removeChannel(ch);
+      window.clearInterval(id);
+    };
+  }, [esAdmin, accessToken, cargarPedidosBadge]);
 
   const entrarGoogle = async () => {
     setLogueando(true);
@@ -116,8 +149,20 @@ export function AdminApp() {
               className={tab === id ? "active" : ""}
               onClick={() => irA(id)}
             >
-              <Icon size={20} />
-              <span>{label}</span>
+              <span className="admin-nav-icon-wrap">
+                <Icon size={20} />
+                {id === "pedidos" && pedidosActivos > 0 && (
+                  <span className="nav-badge" aria-label={`${pedidosActivos} pedidos`}>
+                    {pedidosActivos > 9 ? "9+" : pedidosActivos}
+                  </span>
+                )}
+              </span>
+              <span className="admin-nav-label">{label}</span>
+              {id === "reproductor" && (
+                <SoundWaveSilhouette
+                  className={`nav-sound-wave${musicaSonando ? " is-playing" : ""}`}
+                />
+              )}
             </button>
           ))}
         </nav>
@@ -157,12 +202,15 @@ export function AdminApp() {
           {tab === "pedidos" && <PedidosPanel accessToken={accessToken} />}
           {tab === "cola" && <ColaPanel accessToken={accessToken} />}
           {tab === "qrs" && <QRsPanel accessToken={accessToken} />}
-          {/* El reproductor permanece montado para no cortar la música al navegar. */}
           <div
             className={tab === "reproductor" ? "" : "repro-persist--hidden"}
             aria-hidden={tab !== "reproductor"}
           >
-            <Reproductor accessToken={accessToken} />
+            <Reproductor
+              accessToken={accessToken}
+              visible={tab === "reproductor"}
+              onPlayingChange={setMusicaSonando}
+            />
           </div>
         </main>
       </div>

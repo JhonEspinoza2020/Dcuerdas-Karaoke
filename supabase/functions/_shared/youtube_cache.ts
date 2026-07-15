@@ -14,9 +14,13 @@ const STALE_DIAS = 90;
 
 export type ModoBusqueda = "musica" | "karaoke";
 
-/** Normaliza el término de búsqueda. No fuerza la palabra "karaoke". */
-export function normalizarTerminoBusqueda(q: string, _modo: ModoBusqueda = "musica"): string {
-  return q.trim().toLowerCase().replace(/\s+/g, " ");
+/** Normaliza el término. En karaoke añade la palabra si no viene. */
+export function normalizarTerminoBusqueda(q: string, modo: ModoBusqueda = "karaoke"): string {
+  let t = q.trim().toLowerCase().replace(/\s+/g, " ");
+  if (modo === "karaoke" && t.length >= 2 && !/\bkaraoke\b/i.test(t)) {
+    t = `${t} karaoke`;
+  }
+  return t;
 }
 
 function diasDesde(fecha: Date, dias: number): Date {

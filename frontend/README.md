@@ -5,8 +5,10 @@ Una sola aplicación React, **un solo puerto**, con secciones internas por ruta.
 | Ruta | Usuario | Para qué |
 |------|---------|----------|
 | `/` | — | Página de inicio con la marca y el lema |
-| `/mesa/:numero?t=TOKEN` | Comensales (móvil) | Registro → carta → karaoke |
-| `/admin` | Personal / dueño (PC) | Login por clave → Reproductor, Cola, Códigos QR |
+| `/mesa/:numero?t=TOKEN` | Comensales (móvil) | Registro → música / carta |
+| `/admin` | Personal / dueño (PC) | Login → Reproductor, Cola, Códigos QR |
+
+**Mesas:** solo 1–12 (sin box karaoke).
 
 El **reproductor** vive dentro de `/admin`: el personal reproduce YouTube en la PC del local y **duplica la pantalla al televisor por HDMI** (botón "Pantalla completa").
 

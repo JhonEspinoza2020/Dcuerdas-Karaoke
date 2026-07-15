@@ -8,7 +8,6 @@ import {
   normalizarTerminoBusqueda,
   type VideoCacheItem,
 } from "../_shared/youtube_cache.ts";
-import { buscarEnCatalogo } from "../_shared/catalogo_musica.ts";
 import {
   cuotaDisponible,
   marcarApiMesa,
@@ -18,6 +17,26 @@ import {
 
 const REGION = Deno.env.get("YOUTUBE_REGION") ?? "PE";
 
+/**
+ * Preferencia suave (no filtra): karaoke/letra un poco arriba,
+ * pero se muestran también clips normales si YouTube los deja embeber.
+ */
+function scorePreferencia(titulo: string): number {
+  const t = titulo.toLowerCase();
+  let s = 0;
+  if (/\bkaraoke\b/.test(t)) s += 2;
+  if (/\b(letra|lyrics|pista)\b/.test(t)) s += 1;
+  if (/\bsing[- ]?along\b/.test(t)) s += 1;
+  return s;
+}
+
+function ordenarPreferenciaSuave(items: VideoCacheItem[]): VideoCacheItem[] {
+  return [...items].sort(
+    (a, b) => scorePreferencia(b.titulo) - scorePreferencia(a.titulo),
+  );
+}
+
+/** Solo videos que SÍ se pueden embeber (sin fallback a los bloqueados). */
 async function filtrarReproducibles(
   candidatos: VideoCacheItem[],
   apiKey: string,
@@ -32,7 +51,7 @@ async function filtrarReproducibles(
 
   try {
     const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`);
-    if (!res.ok) return candidatos;
+    if (!res.ok) return [];
     const data = await res.json();
 
     const reproducibles = new Set<string>();
@@ -52,25 +71,12 @@ async function filtrarReproducibles(
       }
     }
 
-    const filtrados = candidatos.filter((c) => reproducibles.has(c.video_id));
-    return filtrados.length > 0 ? filtrados : candidatos;
+    return ordenarPreferenciaSuave(
+      candidatos.filter((c) => reproducibles.has(c.video_id)),
+    );
   } catch {
-    return candidatos;
+    return [];
   }
-}
-
-function mergeUnicos(...listas: VideoCacheItem[][]): VideoCacheItem[] {
-  const vistos = new Set<string>();
-  const out: VideoCacheItem[] = [];
-  for (const lista of listas) {
-    for (const item of lista) {
-      if (vistos.has(item.video_id)) continue;
-      vistos.add(item.video_id);
-      out.push(item);
-      if (out.length >= 15) return out;
-    }
-  }
-  return out;
 }
 
 Deno.serve(async (req) => {
@@ -83,72 +89,62 @@ Deno.serve(async (req) => {
     const numeroMesa = Number(numero_mesa);
     const mesa = await validarMesaToken(numeroMesa, String(token));
 
+    // Búsqueda normal (sin forzar "karaoke"). Si el cliente lo escribe, se respeta.
+    // Karaoke/letra solo reciben un boost suave al ordenar resultados.
     const termino = normalizarTerminoBusqueda(String(q), "musica");
     const limpio = termino.trim();
-    if (limpio.length < 3) {
+    if (limpio.length < 2) {
       return jsonResponse({ resultados: [], total: 0, cache: "skip", fuente: "skip" });
     }
 
-    // 1) Caché exacta (0 cuota) — lo más barato.
     const enCache = await leerCacheYoutube(termino);
     if (enCache?.length) {
+      const resultados = ordenarPreferenciaSuave(enCache);
       return jsonResponse({
-        resultados: enCache,
-        total: enCache.length,
+        resultados,
+        total: resultados.length,
         cache: "hit",
         fuente: "cache",
       });
     }
 
-    // 2) Catálogo del local (0 cuota).
-    const deCatalogo = buscarEnCatalogo(termino);
-    // 3) Caché aproximada (0 cuota).
     const aprox = (await buscarCacheAproximado(termino)) ?? [];
-
-    const locales = mergeUnicos(deCatalogo, aprox);
-    if (locales.length >= 5) {
+    if (aprox.length >= 5) {
+      const resultados = ordenarPreferenciaSuave(aprox);
       return jsonResponse({
-        resultados: locales,
-        total: locales.length,
+        resultados,
+        total: resultados.length,
         cache: "hit",
-        fuente: deCatalogo.length ? "catalogo" : "cache_aprox",
+        fuente: "cache_aprox",
       });
     }
 
-    // 4) ¿Queda cuota y la mesa no está en cooldown?
     const cuota = await cuotaDisponible();
     const mesaOk = await mesaPuedeLlamarApi(mesa.id);
     if (!cuota.ok || !mesaOk) {
-      if (locales.length > 0) {
+      if (aprox.length > 0) {
+        const resultados = ordenarPreferenciaSuave(aprox);
         return jsonResponse({
-          resultados: locales,
-          total: locales.length,
+          resultados,
+          total: resultados.length,
           cache: "hit",
           fuente: "ahorro",
           aviso: cuota.ok
-            ? "Espera unos segundos para buscar de nuevo en YouTube."
-            : "Cupo de búsquedas nuevas de hoy al límite; mostrando éxitos guardados.",
+            ? "Espera unos segundos para buscar de nuevo."
+            : "Cupo de búsquedas de hoy al límite; mostrando resultados guardados.",
         });
       }
       return errorResponse(
         "cuota_youtube",
         cuota.ok
-          ? "Espera unos segundos antes de buscar otra canción nueva."
-          : "Se agotó el cupo de búsquedas nuevas de hoy. Prueba un éxito del local o vuelve mañana.",
+          ? "Espera unos segundos antes de buscar otra canción."
+          : "Se agotó el cupo de búsquedas nuevas de hoy.",
         429,
       );
     }
 
     const apiKey = Deno.env.get("YOUTUBE_API_KEY");
     if (!apiKey) {
-      if (locales.length > 0) {
-        return jsonResponse({
-          resultados: locales,
-          total: locales.length,
-          cache: "hit",
-          fuente: "catalogo",
-        });
-      }
       return errorResponse("youtube_no_configurado", "La búsqueda estará disponible pronto.", 503);
     }
 
@@ -165,10 +161,11 @@ Deno.serve(async (req) => {
 
     const res = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
     if (!res.ok) {
-      if (locales.length > 0) {
+      if (aprox.length > 0) {
+        const resultados = ordenarPreferenciaSuave(aprox);
         return jsonResponse({
-          resultados: locales,
-          total: locales.length,
+          resultados,
+          total: resultados.length,
           cache: "hit",
           fuente: "ahorro",
           aviso: "YouTube no respondió; mostrando sugerencias guardadas.",
@@ -193,16 +190,16 @@ Deno.serve(async (req) => {
         };
       });
 
+    // Verificación real: embeddable=true. Si ninguno sirve, lista vacía (no ofrecer invalidos).
     const resultados = await filtrarReproducibles(candidatos, apiKey);
-    const finales = mergeUnicos(resultados, locales);
 
     if (resultados.length > 0) {
       await guardarCacheYoutube(termino, resultados);
     }
 
     return jsonResponse({
-      resultados: finales,
-      total: finales.length,
+      resultados,
+      total: resultados.length,
       cache: "miss",
       fuente: "youtube",
       cuota: { usadas: cuota.usadas + 1, max: cuota.max },

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, es, supabase, type TipoZona, type VideoResult } from "@dcuerdas/shared";
 import { ColaClientePanel, mensajeAntes, type ColaPublicaItem } from "./ColaClientePanel";
-import { MicIcon, MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon } from "./Icons";
-import { EXITOS_LOCAL } from "../data/exitosLocal";
+import { MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon } from "./Icons";
 
-/** Debounce largo + mínimo 3 letras = menos search.list (100 cuota c/u). */
-const DEBOUNCE_MS = 900;
+/** Busca solo cuando el cliente deja de escribir (ahorra cuota YouTube). */
+const DEBOUNCE_MS = 1200;
 const MIN_CARACTERES = 3;
 
 type Props = {
@@ -24,8 +23,8 @@ type ExitoState = {
 };
 
 export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Props) {
-  const t = modo === "karaoke" ? es.karaoke : es.musica;
-  const AccionIcon = modo === "karaoke" ? MicIcon : MusicIcon;
+  const t = es.musica;
+  const AccionIcon = MusicIcon;
   const [query, setQuery] = useState("");
   const [resultados, setResultados] = useState<VideoResult[]>([]);
   const [seleccionado, setSeleccionado] = useState<VideoResult | null>(null);
@@ -208,37 +207,19 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
                   />
                   {buscando && <span className="search-spinner" aria-label="Buscando" />}
                 </div>
-                {query.trim().length >= MIN_CARACTERES && !buscando && resultados.length === 0 && !error && (
-                  <p className="search-hint">Sin resultados. Prueba un éxito del local u otro nombre.</p>
+                {query.trim().length === 0 && (
+                  <p className="search-hint">Escribe y espera un momento: buscamos cuando dejas de teclear.</p>
                 )}
                 {query.trim().length > 0 && query.trim().length < MIN_CARACTERES && (
                   <p className="search-hint">Escribe al menos {MIN_CARACTERES} letras…</p>
                 )}
+                {query.trim().length >= MIN_CARACTERES && buscando && (
+                  <p className="search-hint">Buscando…</p>
+                )}
+                {query.trim().length >= MIN_CARACTERES && !buscando && resultados.length === 0 && !error && (
+                  <p className="search-hint">Sin resultados. Prueba con otro nombre.</p>
+                )}
               </div>
-
-              {query.trim().length === 0 && (
-                <div className="exitos-local">
-                  <div className="exitos-local-titulo">Éxitos del local</div>
-                  <p className="exitos-local-hint">Elige sin buscar (no gasta cuota de YouTube).</p>
-                  <div className="results">
-                    {EXITOS_LOCAL.map((v) => (
-                      <button
-                        key={v.video_id}
-                        type="button"
-                        className="video-card video-card-pick"
-                        onClick={() => elegirCancion(v)}
-                      >
-                        <img src={v.miniatura_url} alt="" />
-                        <div className="info">
-                          <div className="titulo">{v.titulo}</div>
-                          {v.canal && <div className="canal">{v.canal}</div>}
-                        </div>
-                        <span className="video-pick-hint">Elegir</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div className="results">
                 {resultados.map((v) => (
