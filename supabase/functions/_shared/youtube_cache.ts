@@ -5,6 +5,8 @@ export type VideoCacheItem = {
   titulo: string;
   miniatura_url: string;
   canal: string | null;
+  /** Ya pasó verificación de embed (scraping / encolar). */
+  embed_ok?: boolean;
 };
 
 /** Si nadie busca el término en este tiempo, se puede borrar. */

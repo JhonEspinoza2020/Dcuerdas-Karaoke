@@ -54,8 +54,7 @@ export function PedidosPanel({ accessToken }: Props) {
   return (
     <div className="admin-panel">
       <header className="admin-panel-head">
-        <h1>Pedidos de cocina</h1>
-        <p className="admin-panel-sub">Gestiona los pedidos de las mesas en tiempo real</p>
+        <h1>Pedidos</h1>
       </header>
 
       {error && <div className="error-msg">{error}</div>}

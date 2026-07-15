@@ -1421,6 +1421,14 @@ a { color: inherit; }
 }
 .idle .tagline { font-size: 1.1rem; color: #e85d04; margin-top: 16px; }
 .idle .hint { font-size: 1rem; color: #a89f94; margin-top: 8px; }
+.idle .idle-hint {
+  font-size: 0.95rem;
+  color: #a89f94;
+  margin-top: 20px;
+  max-width: 28rem;
+  text-align: center;
+  line-height: 1.4;
+}
 
 .player-wrap { position: absolute; inset: 0; z-index: 1; }
 .player-wrap iframe { width: 100% !important; height: 100% !important; }

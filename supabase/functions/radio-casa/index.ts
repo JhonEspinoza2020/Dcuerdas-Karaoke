@@ -1,6 +1,7 @@
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { verifyAdminAuth } from "../_shared/auth.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
+import { obtenerBloqueados } from "../_shared/youtube_embed.ts";
 
 type VideoAmbiente = {
   video_id: string;
@@ -26,7 +27,6 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
     const porId = new Map<string, VideoAmbiente>();
 
-    // TODAS las canciones alguna vez enviadas (sin filtrar por “hoy”).
     const page = 1000;
     let from = 0;
     for (;;) {
@@ -51,13 +51,16 @@ Deno.serve(async (req) => {
       }
       if (filas.length < page) break;
       from += page;
-      if (from > 20000) break; // tope de seguridad
+      if (from > 20000) break;
     }
 
-    const videos = [...porId.values()].sort((a, b) => {
-      if (a.preferida !== b.preferida) return a.preferida ? -1 : 1;
-      return 0;
-    });
+    const bloqueados = await obtenerBloqueados([...porId.keys()]);
+    const videos = [...porId.values()]
+      .filter((v) => !bloqueados.has(v.video_id))
+      .sort((a, b) => {
+        if (a.preferida !== b.preferida) return a.preferida ? -1 : 1;
+        return 0;
+      });
 
     return jsonResponse({
       videos,

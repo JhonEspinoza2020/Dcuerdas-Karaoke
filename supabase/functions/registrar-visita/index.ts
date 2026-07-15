@@ -3,10 +3,8 @@ import { validarMesaToken } from "../_shared/mesa.ts";
 import { getUserFromRequest } from "../_shared/auth.ts";
 import { filtrarTexto } from "../_shared/content_filter.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
-
-function normalizarNombre(nombre: string): string {
-  return nombre.trim().toLowerCase().replace(/\s+/g, " ");
-}
+import { inicioJornadaActualIso, claveJornadaDesdeIso } from "../_shared/horario.ts";
+import { AgrupadorPersonas, normalizarNombre, nombresSimilares } from "../_shared/nombres.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -24,21 +22,22 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+    const inicioHoy = inicioJornadaActualIso();
 
-    // Una visita por nombre + mesa por día (evita duplicados al recargar)
-    const inicioDia = new Date();
-    inicioDia.setHours(0, 0, 0, 0);
-
-    const { data: existente } = await supabase
+    // Evitar duplicados en la misma jornada (misma mesa + mismo nombre / Google / similar).
+    const { data: hoyMesa } = await supabase
       .from("visitas_clientes")
-      .select("id")
-      .eq("nombre_norm", nombreNorm)
+      .select("id, nombre_cliente, nombre_norm, user_id")
       .eq("mesa_id", mesa.id)
-      .gte("creado_en", inicioDia.toISOString())
-      .maybeSingle();
+      .gte("creado_en", inicioHoy);
 
-    if (existente) {
-      return jsonResponse({ registrado: false, mensaje: "Visita ya registrada hoy" });
+    const yaHoy = (hoyMesa ?? []).find((v) => {
+      if (user?.id && v.user_id === user.id) return true;
+      return nombresSimilares(nombreNorm, v.nombre_norm || v.nombre_cliente);
+    });
+
+    if (yaHoy) {
+      return jsonResponse({ registrado: false, mensaje: "Visita ya registrada en esta jornada" });
     }
 
     const { data: visita, error } = await supabase
@@ -54,17 +53,32 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    const { count } = await supabase
+    // Contar noches distintas de esta persona (nombre similar + user_id).
+    const { data: historial } = await supabase
       .from("visitas_clientes")
-      .select("id", { count: "exact", head: true })
-      .eq("nombre_norm", nombreNorm);
+      .select("nombre_cliente, nombre_norm, user_id, creado_en")
+      .order("creado_en", { ascending: false })
+      .limit(2000);
+
+    const agrupador = new AgrupadorPersonas();
+    for (const v of historial ?? []) {
+      agrupador.registrar(normalizarNombre(v.nombre_cliente) || v.nombre_norm, v.user_id);
+    }
+    const miClave = agrupador.claveDe(nombreNorm, user?.id ?? null);
+    const noches = new Set<string>();
+    for (const v of historial ?? []) {
+      const k = agrupador.claveDe(normalizarNombre(v.nombre_cliente) || v.nombre_norm, v.user_id);
+      if (k === miClave) noches.add(claveJornadaDesdeIso(v.creado_en));
+    }
+
+    const totalNoches = Math.max(1, noches.size);
 
     return jsonResponse({
       registrado: true,
       visita_id: visita.id,
       creado_en: visita.creado_en,
-      total_visitas: count ?? 1,
-      es_frecuente: (count ?? 1) >= 2,
+      total_visitas: totalNoches,
+      es_frecuente: totalNoches >= 2,
     }, 201);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";

@@ -19,6 +19,8 @@ interface YTPlayer {
   stopVideo(): void;
   pauseVideo(): void;
   playVideo(): void;
+  mute(): void;
+  getPlayerState(): number;
   setShuffle(shufflePlaylist: boolean): void;
   setLoop(loopPlaylist: boolean): void;
   nextVideo(): void;
@@ -29,11 +31,12 @@ interface YTPlayer {
 
 interface YTPlayerEvent {
   data: number;
+  target: YTPlayer;
 }
 
 interface YT {
   Player: new (
-    elementId: string,
+    elementId: string | HTMLElement,
     config: {
       height: string;
       width: string;
@@ -41,7 +44,7 @@ interface YT {
       playerVars?: Record<string, number | string>;
       events?: {
         onStateChange?: (e: YTPlayerEvent) => void;
-        onReady?: () => void;
+        onReady?: (e: YTPlayerEvent) => void;
         onError?: (e: YTPlayerEvent) => void;
       };
     },

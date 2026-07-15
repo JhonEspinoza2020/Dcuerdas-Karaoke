@@ -3,6 +3,7 @@ import { validarMesaToken } from "../_shared/mesa.ts";
 import { validarHorario } from "../_shared/horario.ts";
 import { filtrarTexto } from "../_shared/content_filter.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
+import { videoEsReproducible } from "../_shared/youtube_embed.ts";
 
 const MAX_CANCIONES = 5;
 const MAX_SALUDO_CHARS = 140;
@@ -17,6 +18,21 @@ Deno.serve(async (req) => {
     validarHorario();
     const body = await req.json();
     const mesa = await validarMesaToken(Number(body.numero_mesa), String(body.token));
+
+    const videoId = String(body.youtube_video_id ?? "").trim();
+    if (videoId.length < 6) {
+      return errorResponse("video_invalido", "Elige otra canción de la lista.", 400);
+    }
+
+    const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
+    const check = await videoEsReproducible(videoId, apiKey);
+    if (!check.ok) {
+      return errorResponse(
+        "video_no_reproducible",
+        "Ese video no se puede reproducir en el local (YouTube lo bloquea). Elige otra versión (letra/karaoke).",
+        422,
+      );
+    }
 
     const nombreCliente = filtrarTexto(String(body.nombre_cliente), "nombre");
     let saludo: string | null = null;
@@ -52,7 +68,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Rate limit: no más de 1 saludo por mesa cada SALUDO_COOLDOWN_SEG segundos.
     if (saludo) {
       const desde = new Date(Date.now() - SALUDO_COOLDOWN_SEG * 1000).toISOString();
       const { data: recientes } = await supabase
@@ -77,7 +92,7 @@ Deno.serve(async (req) => {
       .from("cola_reproduccion")
       .insert({
         mesa_id: mesa.id,
-        youtube_video_id: String(body.youtube_video_id),
+        youtube_video_id: videoId,
         titulo_cancion: String(body.titulo_cancion).trim(),
         nombre_cliente: nombreCliente,
         saludo,
@@ -89,7 +104,6 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    // Posición real en la cola global (no solo de la mesa).
     const { count: totalPendientes } = await supabase
       .from("cola_reproduccion")
       .select("id", { count: "exact", head: true })
@@ -113,7 +127,11 @@ Deno.serve(async (req) => {
     const msg = e instanceof Error ? e.message : "error";
     if (msg.startsWith("contenido_no_permitido")) {
       const campo = msg.split(":")[1];
-      return errorResponse("contenido_no_permitido", `El ${campo} contiene palabras no permitidas.`, 422);
+      return errorResponse(
+        "contenido_no_permitido",
+        `El ${campo} contiene palabras no permitidas.`,
+        422,
+      );
     }
     if (msg.startsWith("fuera_de_horario")) {
       const [, inicio, fin] = msg.split(":");

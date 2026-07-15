@@ -50,8 +50,7 @@ export function DashboardPanel({ accessToken }: Props) {
   return (
     <div className="admin-panel">
       <header className="admin-panel-head">
-        <h1>Resumen del local</h1>
-        <p className="admin-panel-sub">Actividad en tiempo real de D&apos;cuerdas</p>
+        <h1>Resumen</h1>
       </header>
 
       {error && <div className="error-msg">{error}</div>}
@@ -81,9 +80,9 @@ export function DashboardPanel({ accessToken }: Props) {
 
       <div className="admin-grid-2">
         <section className="admin-card">
-          <h2><ClockIcon size={18} /> Llegadas de hoy</h2>
+          <h2><ClockIcon size={18} /> Llegadas</h2>
           {llegadas_hoy.length === 0 ? (
-            <p className="panel-empty">Aún no hay clientes registrados hoy.</p>
+            <p className="panel-empty">Sin llegadas.</p>
           ) : (
             <ul className="admin-lista">
               {llegadas_hoy.map((l, i) => (
@@ -107,9 +106,9 @@ export function DashboardPanel({ accessToken }: Props) {
         </section>
 
         <section className="admin-card">
-          <h2><StarIcon size={18} /> Clientes que vuelven</h2>
+          <h2><StarIcon size={18} /> Frecuentes</h2>
           {frecuentes.length === 0 ? (
-            <p className="panel-empty">Cuando un cliente regrese, aparecerá aquí.</p>
+            <p className="panel-empty">Sin frecuentes.</p>
           ) : (
             <ul className="admin-lista">
               {frecuentes.slice(0, 8).map((c) => (

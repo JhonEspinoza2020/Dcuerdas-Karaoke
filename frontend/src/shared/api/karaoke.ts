@@ -63,11 +63,11 @@ export type VideoResult = {
 };
 
 const busquedaCache = new Map<string, { data: VideoResult[]; expira: number }>();
-const CACHE_CLIENTE_MS = 10 * 60 * 1000; // 10 min en el navegador
+/** Caché corto: si no, el celular sigue ofreciendo videos ya bloqueados. */
+const CACHE_CLIENTE_MS = 45 * 1000;
 
 function normalizarBusqueda(q: string, _modo?: TipoZona): string {
   let t = q.trim().toLowerCase().replace(/\s+/g, " ");
-  if (t.length >= 2 && !/\bkaraoke\b/i.test(t)) t = `${t} karaoke`;
   return t;
 }
 
@@ -136,6 +136,43 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error al actualizar");
     return data as ColaItem;
+  },
+
+  /** El reproductor aprendió que YouTube bloquea este embed. */
+  marcarYoutubeBloqueado: async (accessToken: string, video_id: string, motivo = "player_error") => {
+    const res = await fetch(FN("marcar-youtube-bloqueado"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        apikey: ANON,
+      },
+      body: JSON.stringify({ video_id, motivo }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail ?? data.error ?? "Error al marcar video");
+    }
+  },
+
+  /** Mesa: reporta video que falló el preflight de embed. */
+  reportarYoutubeBloqueado: (numero_mesa: number, token: string, video_id: string, motivo = "cliente_preflight") =>
+    post<{ ok: boolean }>("reportar-youtube-bloqueado", {
+      numero_mesa,
+      token,
+      video_id,
+      motivo,
+    }),
+
+  /** Quita un video del caché local de búsquedas del celular. */
+  invalidarBusquedaVideo: (video_id: string) => {
+    for (const [key, entry] of busquedaCache.entries()) {
+      const filtrados = entry.data.filter((v) => v.video_id !== video_id);
+      if (filtrados.length !== entry.data.length) {
+        if (filtrados.length === 0) busquedaCache.delete(key);
+        else busquedaCache.set(key, { ...entry, data: filtrados });
+      }
+    }
   },
 
   mesasQrs: (accessToken: string) =>

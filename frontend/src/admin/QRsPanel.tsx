@@ -19,7 +19,6 @@ export function QRsPanel({ accessToken }: Props) {
   return (
     <div className="panel">
       <h2 className="panel-title">Códigos QR</h2>
-      <p className="panel-sub">Imprime uno por mesa (1–12). Al escanearlo, el cliente entra a esa mesa.</p>
       {error && <div className="error-msg">{error}</div>}
       <div className="qr-grid">
         {qrs.map((q) => {

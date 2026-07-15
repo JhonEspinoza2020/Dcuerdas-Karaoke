@@ -49,23 +49,22 @@ export function ClientesPanel({ accessToken }: Props) {
     <div className="admin-panel">
       <header className="admin-panel-head">
         <h1>Clientes</h1>
-        <p className="admin-panel-sub">Quién llega hoy y quién vuelve con frecuencia</p>
       </header>
 
       {error && <div className="error-msg">{error}</div>}
 
       <input
         className="admin-search"
-        placeholder="Buscar por nombre o zona..."
+        placeholder="Buscar…"
         value={filtro}
         onChange={(e) => setFiltro(e.target.value)}
       />
 
       <div className="admin-grid-2">
         <section className="admin-card">
-          <h2>Hoy en el local ({llegadas.length})</h2>
+          <h2>Hoy ({llegadas.length})</h2>
           {llegadas.length === 0 ? (
-            <p className="panel-empty">Sin llegadas registradas hoy.</p>
+            <p className="panel-empty">Sin llegadas.</p>
           ) : (
             <table className="admin-table">
               <thead>
@@ -97,9 +96,9 @@ export function ClientesPanel({ accessToken }: Props) {
         </section>
 
         <section className="admin-card">
-          <h2>Clientes frecuentes ({frecuentesFiltrados.length})</h2>
+          <h2>Frecuentes ({frecuentesFiltrados.length})</h2>
           {frecuentesFiltrados.length === 0 ? (
-            <p className="panel-empty">Sin clientes recurrentes aún.</p>
+            <p className="panel-empty">Sin frecuentes.</p>
           ) : (
             <table className="admin-table">
               <thead>

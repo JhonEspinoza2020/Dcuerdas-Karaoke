@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+  import { useCallback, useEffect, useRef, useState } from "react";
 import { api, es, supabase, type TipoZona, type VideoResult } from "@dcuerdas/shared";
 import { ColaClientePanel, mensajeAntes, type ColaPublicaItem } from "./ColaClientePanel";
 import { MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon } from "./Icons";
+import { verificarEmbedYoutube } from "../verificarEmbedYoutube";
 
-/** Busca solo cuando el cliente deja de escribir (ahorra cuota YouTube). */
-const DEBOUNCE_MS = 1200;
+/** Espera a que el usuario deje de escribir antes de pegarle a YouTube. */
+const DEBOUNCE_MS = 900;
 const MIN_CARACTERES = 3;
 
 type Props = {
@@ -33,9 +34,11 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  const [esperandoEscritura, setEsperandoEscritura] = useState(false);
   const [exito, setExito] = useState<ExitoState | null>(null);
   const [cola, setCola] = useState<ColaPublicaItem[]>([]);
   const envioRef = useRef<HTMLDivElement | null>(null);
+  const busquedaIdRef = useRef(0);
 
   const actualizarCola = useCallback(async () => {
     const { data } = await supabase
@@ -62,25 +65,42 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
 
   useEffect(() => {
     const q = query.trim();
+    // Cualquier tecla invalida respuestas viejas que aún no llegaron.
+    busquedaIdRef.current += 1;
+    const idBusqueda = busquedaIdRef.current;
+
     if (q.length < MIN_CARACTERES) {
       setResultados([]);
       setBuscando(false);
+      setEsperandoEscritura(false);
       return;
     }
-    setBuscando(true);
+
+    // Mientras escribe: no llamar API.
+    setEsperandoEscritura(true);
+    setBuscando(false);
     setError("");
-    let cancelado = false;
-    const timer = setTimeout(async () => {
+
+    const timer = window.setTimeout(async () => {
+      if (busquedaIdRef.current !== idBusqueda) return;
+      setEsperandoEscritura(false);
+      setBuscando(true);
       try {
         const res = await api.buscarYoutube(numeroMesa, token, q, modo);
-        if (!cancelado) setResultados(res.resultados);
+        if (busquedaIdRef.current !== idBusqueda) return;
+        setResultados(res.resultados);
       } catch (e) {
-        if (!cancelado) setError(e instanceof Error ? e.message : "Error al buscar");
+        if (busquedaIdRef.current !== idBusqueda) return;
+        setResultados([]);
+        setError(e instanceof Error ? e.message : "Error al buscar");
       } finally {
-        if (!cancelado) setBuscando(false);
+        if (busquedaIdRef.current === idBusqueda) setBuscando(false);
       }
     }, DEBOUNCE_MS);
-    return () => { cancelado = true; clearTimeout(timer); };
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [query, numeroMesa, token, modo]);
 
   useEffect(() => {
@@ -105,6 +125,20 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
     setLoading(true);
     setError("");
     try {
+      // Preflight real: misma prueba que el reproductor admin (detecta LatinAutor).
+      const reproducible = await verificarEmbedYoutube(seleccionado.video_id);
+      if (!reproducible) {
+        api.reportarYoutubeBloqueado(numeroMesa, token, seleccionado.video_id, "cliente_preflight")
+          .catch(() => {});
+        api.invalidarBusquedaVideo(seleccionado.video_id);
+        setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
+        setSeleccionado(null);
+        setError(
+          "Ese video lo bloquea YouTube en el local. Elige otra versión (busca con “letra” o “karaoke”).",
+        );
+        return;
+      }
+
       const res = await api.encolarCancion({
         numero_mesa: numeroMesa,
         token,
@@ -134,7 +168,13 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       setResultados([]);
       setQuery("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al encolar");
+      const msg = e instanceof Error ? e.message : "Error al encolar";
+      setError(msg);
+      if (seleccionado && /no se puede reproducir|video_no_reproducible|bloquea/i.test(msg)) {
+        api.invalidarBusquedaVideo(seleccionado.video_id);
+        setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
+        setSeleccionado(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -205,19 +245,21 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
                     onChange={(e) => setQuery(e.target.value)}
                     autoFocus
                   />
-                  {buscando && <span className="search-spinner" aria-label="Buscando" />}
+                  {(buscando || esperandoEscritura) && (
+                    <span className="search-spinner" aria-label={buscando ? "Buscando" : "Esperando"} />
+                  )}
                 </div>
-                {query.trim().length === 0 && (
-                  <p className="search-hint">Escribe y espera un momento: buscamos cuando dejas de teclear.</p>
-                )}
                 {query.trim().length > 0 && query.trim().length < MIN_CARACTERES && (
-                  <p className="search-hint">Escribe al menos {MIN_CARACTERES} letras…</p>
+                  <p className="search-hint">Mínimo {MIN_CARACTERES} letras</p>
+                )}
+                {query.trim().length >= MIN_CARACTERES && esperandoEscritura && (
+                  <p className="search-hint">Cuando dejes de escribir…</p>
                 )}
                 {query.trim().length >= MIN_CARACTERES && buscando && (
                   <p className="search-hint">Buscando…</p>
                 )}
-                {query.trim().length >= MIN_CARACTERES && !buscando && resultados.length === 0 && !error && (
-                  <p className="search-hint">Sin resultados. Prueba con otro nombre.</p>
+                {query.trim().length >= MIN_CARACTERES && !esperandoEscritura && !buscando && resultados.length === 0 && !error && (
+                  <p className="search-hint">Sin resultados</p>
                 )}
               </div>
 
@@ -294,7 +336,9 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
 
               <button className="btn-primary" onClick={encolar} disabled={loading}>
                 <AccionIcon size={18} />
-                {loading ? "Enviando..." : (saludo.trim() ? t.enviar : t.enviarSinSaludo)}
+                {loading
+                  ? "Comprobando video…"
+                  : (saludo.trim() ? t.enviar : t.enviarSinSaludo)}
               </button>
             </div>
           )}
