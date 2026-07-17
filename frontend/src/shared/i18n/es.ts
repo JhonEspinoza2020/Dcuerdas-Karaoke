@@ -94,7 +94,7 @@ export const es = {
     vacio: "Agrega platos a tu pedido",
     precio: "S/",
     consultarPrecio: "Consultar precio",
-    reservacion: "Requiere reservación",
+    reservacion: "Coordinar con el mozo.",
   },
   admin: {
     titulo: "Panel D'cuerdas",
