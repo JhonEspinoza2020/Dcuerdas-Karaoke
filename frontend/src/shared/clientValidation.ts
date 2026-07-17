@@ -9,7 +9,7 @@ const PALABRAS_BLOQUEADAS = new Set([
 ]);
 
 export const LIMITES = {
-  nombre: { min: 2, max: 80 },
+  nombre: { min: 2, max: 20 },
   saludo: { max: 140 },
   busqueda: { max: 80 },
   nota: { max: 180 },

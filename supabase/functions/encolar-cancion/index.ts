@@ -12,7 +12,7 @@ import { exigirCooldownMesa } from "../_shared/mesa_rate.ts";
 
 const MAX_SALUDO_CHARS = 140;
 const MAX_TITULO = 200;
-const MAX_NOMBRE = 80;
+const MAX_NOMBRE = 20;
 /** Segundos de espera entre un saludo y el siguiente por mesa. */
 const SALUDO_COOLDOWN_SEG = 180;
 

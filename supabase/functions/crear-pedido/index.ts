@@ -4,7 +4,7 @@ import { filtrarTexto } from "../_shared/content_filter.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 
 const MAX_ITEMS = 30;
-const MAX_NOMBRE = 80;
+const MAX_NOMBRE = 20;
 const MAX_NOTA = 180;
 const COOLDOWN_PEDIDO_SEG = 10;
 
