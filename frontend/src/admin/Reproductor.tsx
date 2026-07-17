@@ -3,6 +3,7 @@ import { api, supabase, es, type ColaItem } from "@dcuerdas/shared";
 import { useYouTubePlayer } from "./useYouTubePlayer";
 import { BrandLogo } from "../components/BrandLogo";
 import { leerSaludo } from "./leerSaludo";
+import { AdminBuscadorMusica } from "./AdminBuscadorMusica";
 
 type Props = {
   readonly accessToken: string;
@@ -176,7 +177,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         () => cargarCola(),
       )
       .subscribe();
-    const intervalo = window.setInterval(cargarCola, 3000);
+    const intervalo = window.setInterval(cargarCola, 5000);
     return () => {
       supabase.removeChannel(channel);
       window.clearInterval(intervalo);
@@ -256,7 +257,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     }
     setMostrarSaludo(true);
     const volAntes = getVolumeRef.current();
-    setVolumeRef.current(12);
+    // Bajar casi al mínimo la música para que el saludo se oiga fuerte.
+    setVolumeRef.current(2);
     let cerrado = false;
     const cerrar = () => {
       if (cerrado) return;
@@ -266,7 +268,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       onListo?.();
     };
     const cancelarVoz = leerSaludo(texto, { onEnd: cerrar });
-    const tope = window.setTimeout(cerrar, 28000);
+    // Dos lecturas del saludo: margen amplio por si el texto es largo.
+    const tope = window.setTimeout(cerrar, 56000);
     cancelarVozRef.current = () => {
       window.clearTimeout(tope);
       cancelarVoz();
@@ -570,6 +573,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           >
             Pantalla completa
           </button>
+          {visible && <AdminBuscadorMusica accessToken={accessToken} />}
         </div>
       </div>
 

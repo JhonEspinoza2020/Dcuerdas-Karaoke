@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { es, useAuth } from "@dcuerdas/shared";
+import {
+  es,
+  useAuth,
+  validarNombre,
+  sanitizarInput,
+  LIMITES,
+  COOLDOWNS,
+  msRestantesRateLimit,
+  marcarRateLimit,
+  formatearEspera,
+} from "@dcuerdas/shared";
 import type { ClienteDatos } from "../types";
 import { ArrowRightIcon } from "./Icons";
 import { GoogleSignInButton } from "../../components/GoogleSignInButton";
@@ -7,7 +17,7 @@ import { GoogleSignInButton } from "../../components/GoogleSignInButton";
 type Props = {
   datos: ClienteDatos;
   onChange: (d: ClienteDatos) => void;
-  onContinuar: () => void;
+  onContinuar: (finales: ClienteDatos) => void;
   redirectUrl?: string;
 };
 
@@ -15,10 +25,13 @@ export function RegistroStep({ datos, onChange, onContinuar, redirectUrl }: Prop
   const { user, nombreMostrar, loginGoogle } = useAuth();
   const [modoInvitado, setModoInvitado] = useState(false);
   const [logueando, setLogueando] = useState(false);
+  const [error, setError] = useState("");
 
   const nombreGoogle = nombreMostrar || datos.nombre;
-  const validoInvitado = datos.nombre.trim().length >= 2;
-  const validoGoogle = Boolean(user && nombreGoogle.trim().length >= 2);
+  const checkInvitado = validarNombre(datos.nombre);
+  const checkGoogle = validarNombre(nombreGoogle);
+  const validoInvitado = checkInvitado.ok;
+  const validoGoogle = Boolean(user && checkGoogle.ok);
 
   const entrarGoogle = async () => {
     setLogueando(true);
@@ -29,16 +42,33 @@ export function RegistroStep({ datos, onChange, onContinuar, redirectUrl }: Prop
     }
   };
 
-  const continuarGoogle = () => {
-    if (nombreGoogle.trim().length >= 2) {
-      onChange({ ...datos, nombre: nombreGoogle.trim() });
-      onContinuar();
+  const intentarContinuar = (nombreRaw: string) => {
+    const check = validarNombre(nombreRaw);
+    if (!check.ok) {
+      setError(check.error);
+      return;
     }
+    const espera = msRestantesRateLimit("registro", COOLDOWNS.registroMs);
+    if (espera > 0) {
+      setError(`Espera ${formatearEspera(espera)}.`);
+      return;
+    }
+    marcarRateLimit("registro");
+    setError("");
+    const finales = { ...datos, nombre: check.valor };
+    onChange(finales);
+    onContinuar(finales);
+  };
+
+  const continuarGoogle = () => {
+    intentarContinuar(nombreGoogle);
   };
 
   return (
     <div className="step-card">
       <h2 className="step-title">{es.registro.titulo}</h2>
+
+      {error && <div className="error-msg" role="alert">{error}</div>}
 
       {!modoInvitado && !user && (
         <div className="auth-opciones">
@@ -69,14 +99,26 @@ export function RegistroStep({ datos, onChange, onContinuar, redirectUrl }: Prop
             <label>{es.registro.nombre}</label>
             <input
               value={datos.nombre}
-              onChange={(e) => onChange({ ...datos, nombre: e.target.value })}
+              onChange={(e) => {
+                setError("");
+                onChange({
+                  ...datos,
+                  nombre: sanitizarInput(e.target.value, LIMITES.nombre.max),
+                });
+              }}
               placeholder={es.registro.placeholderNombre}
-              maxLength={80}
+              maxLength={LIMITES.nombre.max}
+              autoComplete="name"
               autoFocus
-              onKeyDown={(e) => e.key === "Enter" && validoInvitado && onContinuar()}
+              onKeyDown={(e) => e.key === "Enter" && validoInvitado && intentarContinuar(datos.nombre)}
             />
+            <p className="field-hint">{datos.nombre.trim().length}/{LIMITES.nombre.max}</p>
           </div>
-          <button className="btn-primary" disabled={!validoInvitado} onClick={onContinuar}>
+          <button
+            className="btn-primary"
+            disabled={!validoInvitado}
+            onClick={() => intentarContinuar(datos.nombre)}
+          >
             {es.registro.continuar}
             <ArrowRightIcon size={18} />
           </button>

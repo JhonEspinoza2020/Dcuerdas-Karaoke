@@ -49,15 +49,19 @@ function armarTrozos(textoOriginal: string): Trozo[] {
   const n = frases.length;
   return frases.map((frase, i) => {
     const t = i / Math.max(1, n - 1);
-    // Voz más alegre: tono alto y ritmo vivo (sin inventar palabras).
+    // Más claro y presente: un poco más lento, tono firme.
     return {
       texto: frase,
-      rate: 1.05 + t * 0.06,
-      pitch: 1.22 - t * 0.06,
-      pausaDespues: i < n - 1 ? 110 : 40,
+      rate: 0.92 + t * 0.04,
+      pitch: 1.12 - t * 0.04,
+      pausaDespues: i < n - 1 ? 140 : 50,
     };
   });
 }
+
+const REPETICIONES_SALUDO = 2;
+/** Pausa entre la 1.ª y la 2.ª lectura del mismo saludo. */
+const PAUSA_ENTRE_REPETICIONES_MS = 650;
 
 export function leerSaludo(
   texto: string,
@@ -75,15 +79,31 @@ export function leerSaludo(
   let started = false;
   window.speechSynthesis.cancel();
 
-  const guion = armarTrozos(limpio);
+  const guionBase = armarTrozos(limpio);
+  // Repite el saludo completo N veces (con pausa entre repeticiones).
+  const guion: Trozo[] = [];
+  for (let r = 0; r < REPETICIONES_SALUDO; r++) {
+    for (let i = 0; i < guionBase.length; i++) {
+      const trozo = guionBase[i];
+      const esUltimoDeRepeticion = i === guionBase.length - 1;
+      const hayOtraRepeticion = r < REPETICIONES_SALUDO - 1;
+      guion.push({
+        ...trozo,
+        pausaDespues: esUltimoDeRepeticion && hayOtraRepeticion
+          ? PAUSA_ENTRE_REPETICIONES_MS
+          : trozo.pausaDespues,
+      });
+    }
+  }
 
   const crearUtterance = (trozo: Trozo) => {
     const voz = elegirVoz();
     const u = new SpeechSynthesisUtterance(trozo.texto);
     u.lang = voz?.lang || "es-MX";
     if (voz) u.voice = voz;
-    u.rate = Math.min(1.2, Math.max(0.9, trozo.rate));
-    u.pitch = Math.min(1.45, Math.max(1.05, trozo.pitch));
+    u.rate = Math.min(1.05, Math.max(0.85, trozo.rate));
+    u.pitch = Math.min(1.25, Math.max(1.0, trozo.pitch));
+    // Máximo permitido por el navegador (0–1).
     u.volume = 1;
     return u;
   };

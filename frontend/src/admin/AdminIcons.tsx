@@ -78,6 +78,16 @@ export function OrderIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function MenuIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h10" />
+    </svg>
+  );
+}
+
 export function LogoutIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size, className)}>

@@ -15,6 +15,13 @@ const sizeClass: Record<Size, string> = {
   nav: "brand-logo--nav",
 };
 
+const sizeMaxWidth: Record<Size, string> = {
+  hero: "360px",
+  header: "280px",
+  compact: "240px",
+  nav: "168px",
+};
+
 export function BrandLogo({ size = "header", className = "", showSubtitulo = false }: Props) {
   return (
     <div className={`brand-logo ${sizeClass[size]} ${className}`.trim()}>
@@ -22,7 +29,7 @@ export function BrandLogo({ size = "header", className = "", showSubtitulo = fal
         src={marcaAssets.logo}
         alt={marcaAssets.logoAlt}
         className="brand-logo-img"
-        style={{ maxWidth: size === "header" ? "280px" : size === "hero" ? "360px" : "240px", width: "100%" }}
+        style={{ maxWidth: sizeMaxWidth[size], width: "100%" }}
       />
       {showSubtitulo && size === "hero" && (
         <span className="brand-logo-sub visually-hidden">{marcaAssets.logoAlt}</span>

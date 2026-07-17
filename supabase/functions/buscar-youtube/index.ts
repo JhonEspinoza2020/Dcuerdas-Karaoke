@@ -15,6 +15,7 @@ import {
   registrarBusquedaApi,
 } from "../_shared/youtube_cuota.ts";
 import { filtrarReproduciblesCompleto } from "../_shared/youtube_embed.ts";
+import { exigirCooldownMesa } from "../_shared/mesa_rate.ts";
 
 /**
  * Preferencia suave (no filtra): karaoke/letra un poco arriba.
@@ -49,6 +50,25 @@ Deno.serve(async (req) => {
     if (limpio.length < 2) {
       return jsonResponse({ resultados: [], total: 0, cache: "skip", fuente: "skip" });
     }
+    if (limpio.length > 80) {
+      return errorResponse("busqueda_muy_larga", "La búsqueda es demasiado larga.", 400);
+    }
+
+    // Todas las rutas (caché o API) cuentan: evita spam de embed checks.
+    try {
+      await exigirCooldownMesa(mesa.id, "buscar_youtube", 3);
+    } catch (e) {
+      if (e instanceof Error && e.message === "rate_limit") {
+        return jsonResponse({
+          resultados: [],
+          total: 0,
+          cache: "miss",
+          fuente: "cooldown",
+          aviso: "Espera un momento y vuelve a buscar.",
+        });
+      }
+      throw e;
+    }
 
     const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
 
@@ -57,16 +77,16 @@ Deno.serve(async (req) => {
       const resultados = ordenarPreferenciaSuave(
         await filtrarReproduciblesCompleto(enCache, apiKey),
       );
-      if (resultados.length > 0) {
-        // Refrescar caché solo con los que siguen siendo válidos.
+      // Si el filtro dejó casi nada, no servir caché podrida: ir a YouTube.
+      if (resultados.length >= 3 || (resultados.length > 0 && resultados.length >= Math.ceil(enCache.length * 0.35))) {
         await guardarCacheYoutube(termino, resultados);
+        return jsonResponse({
+          resultados,
+          total: resultados.length,
+          cache: "hit",
+          fuente: "cache",
+        });
       }
-      return jsonResponse({
-        resultados,
-        total: resultados.length,
-        cache: "hit",
-        fuente: "cache",
-      });
     }
 
     const aprox = (await buscarCacheAproximado(termino)) ?? [];
@@ -92,21 +112,31 @@ Deno.serve(async (req) => {
         const resultados = ordenarPreferenciaSuave(
           await filtrarReproduciblesCompleto(aprox, apiKey),
         );
+        if (resultados.length > 0) {
+          return jsonResponse({
+            resultados,
+            total: resultados.length,
+            cache: "hit",
+            fuente: "ahorro",
+            aviso: cuota.ok
+              ? "Espera unos segundos para buscar de nuevo."
+              : "Cupo de búsquedas de hoy al límite; mostrando resultados guardados.",
+          });
+        }
+      }
+      // Cooldown de mesa: no devolver error rojo; el cliente reintentará al terminar de escribir.
+      if (cuota.ok && !mesaOk) {
         return jsonResponse({
-          resultados,
-          total: resultados.length,
-          cache: "hit",
-          fuente: "ahorro",
-          aviso: cuota.ok
-            ? "Espera unos segundos para buscar de nuevo."
-            : "Cupo de búsquedas de hoy al límite; mostrando resultados guardados.",
+          resultados: [],
+          total: 0,
+          cache: "miss",
+          fuente: "cooldown",
+          aviso: "Espera un momento y vuelve a buscar.",
         });
       }
       return errorResponse(
         "cuota_youtube",
-        cuota.ok
-          ? "Espera unos segundos antes de buscar otra canción."
-          : "Se agotó el cupo de búsquedas nuevas de hoy.",
+        "Se agotó el cupo de búsquedas nuevas de hoy.",
         429,
       );
     }

@@ -72,6 +72,7 @@ export function estadoHorario() {
     abierto: karaokeEstaAbierto(),
     horario: { inicio: HORA_INICIO, fin: HORA_FIN, zona_horaria: TIMEZONE },
     limite_canciones_por_mesa: 5,
+    ventana_canciones_minutos: 15,
     total_mesas: 12,
   };
 }

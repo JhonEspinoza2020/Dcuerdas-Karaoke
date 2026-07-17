@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { es, useAuth } from "@dcuerdas/shared";
 import { BrandLogo } from "./components/BrandLogo";
@@ -11,11 +11,17 @@ export function Landing() {
   const [logueando, setLogueando] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!cargando && user && esAdmin) {
+      navigate("/admin", { replace: true });
+    }
+  }, [cargando, user, esAdmin, navigate]);
+
   const entrarGoogle = async () => {
     setLogueando(true);
     setError("");
     try {
-      await loginGoogle(`${window.location.origin}/`);
+      await loginGoogle(`${window.location.origin}/admin`);
     } catch {
       setError("No se pudo iniciar sesión con Google");
       setLogueando(false);
@@ -56,17 +62,7 @@ export function Landing() {
           )}
 
           {!cargando && user && esAdmin && (
-            <>
-              <p>
-                {es.auth.hola}, <strong>{user.user_metadata?.full_name ?? user.email}</strong>
-              </p>
-              <button type="button" className="btn-primary landing-panel-btn" onClick={() => navigate("/admin")}>
-                Entrar al panel
-              </button>
-              <button type="button" className="landing-logout" onClick={logout}>
-                {es.auth.cerrarSesion}
-              </button>
-            </>
+            <p className="panel-empty">Entrando al panel…</p>
           )}
 
           {!cargando && user && !esAdmin && (

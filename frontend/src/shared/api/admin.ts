@@ -41,6 +41,7 @@ export type PedidoItem = {
   plato_nombre: string;
   cantidad: number;
   nota: string | null;
+  precio_unitario?: number;
 };
 
 export type PedidoAdmin = {
@@ -52,7 +53,37 @@ export type PedidoAdmin = {
   telefono: string | null;
   estado: "pendiente" | "en_preparacion" | "listo" | "entregado" | "cancelado";
   creado_en: string;
+  archivado_en?: string | null;
   items: PedidoItem[];
+  subtotal?: number;
+};
+
+export type PedidosFiltro = "jornada" | "hoy" | "rango";
+
+export type PedidosQuery = {
+  filtro?: PedidosFiltro;
+  desde?: string;
+  hasta?: string;
+};
+
+export type PlatoAdmin = {
+  id: number;
+  categoria_id: number;
+  nombre: string;
+  descripcion: string | null;
+  precio: number;
+  disponible: boolean;
+  destacado?: boolean;
+  orden: number;
+  imagen_url?: string | null;
+};
+
+export type CategoriaAdmin = {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  orden: number;
+  activa: boolean;
 };
 
 function adminHeaders(accessToken: string, method = "GET") {
@@ -64,31 +95,76 @@ function adminHeaders(accessToken: string, method = "GET") {
   return h;
 }
 
+async function adminJson<T>(accessToken: string, path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const res = await fetch(path, {
+    ...init,
+    headers: { ...adminHeaders(accessToken, method), ...(init?.headers ?? {}) },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error");
+  return data as T;
+}
+
 export const adminApi = {
   resumen: (accessToken: string) =>
-    fetch(FN("admin-resumen"), { headers: adminHeaders(accessToken) }).then(async (r) => {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail ?? data.error ?? "Error");
-      return data as AdminResumen;
-    }),
+    adminJson<AdminResumen>(accessToken, FN("admin-resumen")),
 
-  pedidos: (accessToken: string) =>
-    fetch(FN("admin-pedidos"), { headers: adminHeaders(accessToken) }).then(async (r) => {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail ?? data.error ?? "Error");
-      return data as PedidoAdmin[];
-    }),
+  pedidos: (accessToken: string, query?: PedidosQuery) => {
+    const params = new URLSearchParams();
+    if (query?.filtro) params.set("filtro", query.filtro);
+    if (query?.desde) params.set("desde", query.desde);
+    if (query?.hasta) params.set("hasta", query.hasta);
+    const qs = params.toString();
+    return adminJson<PedidoAdmin[]>(
+      accessToken,
+      qs ? `${FN("admin-pedidos")}?${qs}` : FN("admin-pedidos"),
+    );
+  },
 
   actualizarPedido: async (accessToken: string, pedido_id: number, estado: string) => {
-    const res = await fetch(FN("admin-pedidos"), {
+    return adminJson(accessToken, FN("admin-pedidos"), {
       method: "PATCH",
-      headers: adminHeaders(accessToken, "PATCH"),
       body: JSON.stringify({ pedido_id, estado }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error");
-    return data;
   },
+
+  categorias: (accessToken: string) =>
+    adminJson<CategoriaAdmin[]>(accessToken, `${FN("admin-carta")}?recurso=categorias`),
+
+  platos: (accessToken: string) =>
+    adminJson<PlatoAdmin[]>(accessToken, `${FN("admin-carta")}?recurso=platos`),
+
+  crearPlato: (
+    accessToken: string,
+    body: {
+      categoria_id: number;
+      nombre: string;
+      precio: number;
+      descripcion?: string | null;
+      disponible?: boolean;
+    },
+  ) =>
+    adminJson<PlatoAdmin>(accessToken, `${FN("admin-carta")}?recurso=platos`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  actualizarPlato: (
+    accessToken: string,
+    body: {
+      id: number;
+      nombre?: string;
+      precio?: number;
+      descripcion?: string | null;
+      disponible?: boolean;
+      categoria_id?: number;
+    },
+  ) =>
+    adminJson<PlatoAdmin>(accessToken, `${FN("admin-carta")}?recurso=platos`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
 
   verificarAdmin: (accessToken: string) =>
     fetch(FN("verificar-admin"), { headers: adminHeaders(accessToken) }).then((r) => r.json()),

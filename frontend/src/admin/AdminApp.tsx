@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { adminApi, es, supabase, useAuth } from "@dcuerdas/shared";
+import { adminApi, api, es, supabase, useAuth } from "@dcuerdas/shared";
 import { Reproductor } from "./Reproductor";
 import { ColaPanel } from "./ColaPanel";
 import { QRsPanel } from "./QRsPanel";
 import { DashboardPanel } from "./DashboardPanel";
 import { ClientesPanel } from "./ClientesPanel";
 import { PedidosPanel } from "./PedidosPanel";
+import { CartaPanel } from "./CartaPanel";
 import { BrandLogo } from "../components/BrandLogo";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import {
@@ -18,16 +19,18 @@ import {
   OrderIcon,
   LogoutIcon,
   SoundWaveSilhouette,
+  MenuIcon,
 } from "./AdminIcons";
 
-type Tab = "dashboard" | "clientes" | "pedidos" | "cola" | "reproductor" | "qrs";
+type Tab = "dashboard" | "clientes" | "pedidos" | "carta" | "cola" | "reproductor" | "qrs";
 
 const NAV: { id: Tab; label: string; icon: typeof DashboardIcon }[] = [
   { id: "dashboard", label: "Resumen", icon: DashboardIcon },
-  { id: "clientes", label: "Clientes", icon: UsersIcon },
   { id: "pedidos", label: "Pedidos", icon: OrderIcon },
   { id: "cola", label: "Cola", icon: QueueIcon },
   { id: "reproductor", label: "Reproductor", icon: TvIcon },
+  { id: "clientes", label: "Clientes", icon: UsersIcon },
+  { id: "carta", label: "Carta", icon: MenuIcon },
   { id: "qrs", label: "Códigos QR", icon: QrIcon },
 ];
 
@@ -39,6 +42,7 @@ export function AdminApp() {
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const [musicaSonando, setMusicaSonando] = useState(false);
   const [pedidosActivos, setPedidosActivos] = useState(0);
+  const [colaActiva, setColaActiva] = useState(0);
 
   const cargarPedidosBadge = useCallback(async () => {
     if (!accessToken) return;
@@ -54,21 +58,54 @@ export function AdminApp() {
     }
   }, [accessToken]);
 
+  const cargarColaBadge = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const data = await api.colaActiva(accessToken);
+      if (!Array.isArray(data)) {
+        setColaActiva(0);
+        return;
+      }
+      setColaActiva(
+        data.filter((c) => c.estado === "pendiente" || c.estado === "reproduciendo").length,
+      );
+    } catch {
+      setColaActiva(0);
+    }
+  }, [accessToken]);
+
   useEffect(() => {
     if (!esAdmin || !accessToken) return;
+    let badgeTimer = 0;
+    const refreshBadges = () => {
+      window.clearTimeout(badgeTimer);
+      badgeTimer = window.setTimeout(() => {
+        cargarPedidosBadge();
+        cargarColaBadge();
+      }, 200);
+    };
     cargarPedidosBadge();
+    cargarColaBadge();
     const ch = supabase
-      .channel("admin-pedidos-badge")
+      .channel("admin-nav-badges")
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
         cargarPedidosBadge();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cola_reproduccion" }, () => {
+        cargarColaBadge();
+      })
       .subscribe();
-    const id = window.setInterval(cargarPedidosBadge, 15000);
+    const id = window.setInterval(refreshBadges, 45000);
     return () => {
+      window.clearTimeout(badgeTimer);
       supabase.removeChannel(ch);
       window.clearInterval(id);
     };
-  }, [esAdmin, accessToken, cargarPedidosBadge]);
+  }, [esAdmin, accessToken, cargarPedidosBadge, cargarColaBadge]);
+
+  useEffect(() => {
+    if (user) setLogueando(false);
+  }, [user]);
 
   const entrarGoogle = async () => {
     setLogueando(true);
@@ -90,6 +127,8 @@ export function AdminApp() {
     setTab(id);
     setSidebarAbierto(false);
   };
+
+  const badgeTexto = (n: number) => (n > 9 ? "9+" : String(n));
 
   if (cargando) {
     return (
@@ -135,36 +174,43 @@ export function AdminApp() {
     <div className="admin-layout">
       <aside className={`admin-sidebar ${sidebarAbierto ? "open" : ""}`}>
         <div className="admin-sidebar-brand">
-          <BrandLogo size="nav" />
+          <BrandLogo size="nav" className="admin-nav-logo" />
           <div className="admin-user-mini">
             <span className="admin-sidebar-titulo">Panel</span>
-            <span className="admin-user-email">{perfil?.nombre ?? user.email}</span>
+            <span className="admin-user-email" title={perfil?.nombre ?? user.email ?? ""}>
+              {perfil?.nombre ?? user.email}
+            </span>
           </div>
         </div>
         <nav className="admin-sidebar-nav">
-          {NAV.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              className={tab === id ? "active" : ""}
-              onClick={() => irA(id)}
-            >
-              <span className="admin-nav-icon-wrap">
-                <Icon size={20} />
-                {id === "pedidos" && pedidosActivos > 0 && (
-                  <span className="nav-badge" aria-label={`${pedidosActivos} pedidos`}>
-                    {pedidosActivos > 9 ? "9+" : pedidosActivos}
-                  </span>
+          {NAV.map(({ id, label, icon: Icon }) => {
+            let badge = 0;
+            if (id === "pedidos") badge = pedidosActivos;
+            else if (id === "cola") badge = colaActiva;
+            return (
+              <button
+                key={id}
+                type="button"
+                className={tab === id ? "active" : ""}
+                onClick={() => irA(id)}
+              >
+                <span className="admin-nav-icon-wrap">
+                  <Icon size={20} />
+                  {badge > 0 && (
+                    <span className="nav-badge" aria-label={`${badge} pendientes`}>
+                      {badgeTexto(badge)}
+                    </span>
+                  )}
+                </span>
+                <span className="admin-nav-label">{label}</span>
+                {id === "reproductor" && (
+                  <SoundWaveSilhouette
+                    className={`nav-sound-wave${musicaSonando ? " is-playing" : ""}`}
+                  />
                 )}
-              </span>
-              <span className="admin-nav-label">{label}</span>
-              {id === "reproductor" && (
-                <SoundWaveSilhouette
-                  className={`nav-sound-wave${musicaSonando ? " is-playing" : ""}`}
-                />
-              )}
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </nav>
         <button type="button" className="admin-sidebar-logout" onClick={salir}>
           <LogoutIcon size={18} />
@@ -199,8 +245,19 @@ export function AdminApp() {
         <main className="admin-content">
           {tab === "dashboard" && <DashboardPanel accessToken={accessToken} />}
           {tab === "clientes" && <ClientesPanel accessToken={accessToken} />}
-          {tab === "pedidos" && <PedidosPanel accessToken={accessToken} />}
-          {tab === "cola" && <ColaPanel accessToken={accessToken} />}
+          {tab === "pedidos" && (
+            <PedidosPanel
+              accessToken={accessToken}
+              onActiveCountChange={setPedidosActivos}
+            />
+          )}
+          {tab === "carta" && <CartaPanel accessToken={accessToken} />}
+          {tab === "cola" && (
+            <ColaPanel
+              accessToken={accessToken}
+              onCountChange={setColaActiva}
+            />
+          )}
           {tab === "qrs" && <QRsPanel accessToken={accessToken} />}
           <div
             className={tab === "reproductor" ? "" : "repro-persist--hidden"}

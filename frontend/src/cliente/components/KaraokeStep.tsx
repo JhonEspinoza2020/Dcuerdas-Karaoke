@@ -1,18 +1,44 @@
-  import { useCallback, useEffect, useRef, useState } from "react";
-import { api, es, supabase, type TipoZona, type VideoResult } from "@dcuerdas/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  api,
+  es,
+  speechRecognitionSupported,
+  startVoiceSearch,
+  supabase,
+  validarBusqueda,
+  validarSaludo,
+  LIMITES,
+  COOLDOWNS,
+  msRestantesRateLimit,
+  marcarRateLimit,
+  formatearEspera,
+  type VideoResult,
+  type LimiteCola,
+} from "@dcuerdas/shared";
 import { ColaClientePanel, mensajeAntes, type ColaPublicaItem } from "./ColaClientePanel";
-import { MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon } from "./Icons";
+import { MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon, MicIcon } from "./Icons";
 import { verificarEmbedYoutube } from "../verificarEmbedYoutube";
 
 /** Espera a que el usuario deje de escribir antes de pegarle a YouTube. */
-const DEBOUNCE_MS = 900;
+const DEBOUNCE_MS = 1100;
 const MIN_CARACTERES = 3;
+
+function mensajeLimiteUi(limite: LimiteCola, t: typeof es.musica): string {
+  if (limite.motivo === "limite_mesa" || limite.motivo === "limite_persona" || !limite.puede_encolar) {
+    if (limite.espera_segundos > 0) {
+      const mins = Math.max(1, Math.ceil(limite.espera_segundos / 60));
+      return t.limiteEspera.replace("{mins}", String(mins));
+    }
+    return t.limiteAlcanzado;
+  }
+  return t.limiteAlcanzado;
+}
 
 type Props = {
   numeroMesa: number;
   token: string;
   nombre: string;
-  modo: TipoZona;
+  modo: "musica";
   onContinuar: () => void;
 };
 
@@ -35,10 +61,28 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const [loading, setLoading] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [esperandoEscritura, setEsperandoEscritura] = useState(false);
+  const [escuchando, setEscuchando] = useState(false);
   const [exito, setExito] = useState<ExitoState | null>(null);
   const [cola, setCola] = useState<ColaPublicaItem[]>([]);
+  const [limiteCola, setLimiteCola] = useState<LimiteCola | null>(null);
   const envioRef = useRef<HTMLDivElement | null>(null);
   const busquedaIdRef = useRef(0);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const busquedaInputRef = useRef<HTMLInputElement | null>(null);
+  const detenerVozRef = useRef<(() => void) | null>(null);
+
+  const actualizarLimite = useCallback(async () => {
+    if (!nombre.trim()) return;
+    const espera = msRestantesRateLimit(`limite-${numeroMesa}`, COOLDOWNS.consultarLimiteMs);
+    if (espera > 0) return;
+    try {
+      marcarRateLimit(`limite-${numeroMesa}`);
+      const limite = await api.consultarLimiteCola(numeroMesa, token, nombre);
+      setLimiteCola(limite);
+    } catch {
+      /* El servidor valida al encolar. */
+    }
+  }, [numeroMesa, token, nombre]);
 
   const actualizarCola = useCallback(async () => {
     const { data } = await supabase
@@ -46,7 +90,16 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       .select("id, numero_mesa, etiqueta, tipo, titulo_cancion, nombre_cliente, estado")
       .order("creado_en");
     if (data) setCola(data as ColaPublicaItem[]);
-  }, []);
+    void actualizarLimite();
+  }, [actualizarLimite]);
+
+  useEffect(() => {
+    void actualizarLimite();
+    const tick = window.setInterval(() => {
+      void actualizarLimite();
+    }, 60_000);
+    return () => window.clearInterval(tick);
+  }, [actualizarLimite]);
 
   useEffect(() => {
     actualizarCola();
@@ -56,12 +109,16 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
         actualizarCola();
       })
       .subscribe();
-    const intervalo = window.setInterval(actualizarCola, 8000);
+    const intervalo = window.setInterval(actualizarCola, 20_000);
     return () => {
       supabase.removeChannel(channel);
       window.clearInterval(intervalo);
     };
   }, [numeroMesa, actualizarCola]);
+
+  useEffect(() => {
+    return () => detenerVozRef.current?.();
+  }, []);
 
   useEffect(() => {
     const q = query.trim();
@@ -76,23 +133,41 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       return;
     }
 
-    // Mientras escribe: no llamar API.
+    // Mientras escribe: no llamar API ni mostrar errores viejos.
     setEsperandoEscritura(true);
     setBuscando(false);
     setError("");
 
     const timer = window.setTimeout(async () => {
       if (busquedaIdRef.current !== idBusqueda) return;
+      const espera = msRestantesRateLimit(`buscar-${numeroMesa}`, COOLDOWNS.busquedaMs);
+      if (espera > 0) {
+        setEsperandoEscritura(false);
+        setBuscando(false);
+        return;
+      }
       setEsperandoEscritura(false);
       setBuscando(true);
       try {
+        marcarRateLimit(`buscar-${numeroMesa}`);
         const res = await api.buscarYoutube(numeroMesa, token, q, modo);
         if (busquedaIdRef.current !== idBusqueda) return;
         setResultados(res.resultados);
+        setError("");
+        // Cerrar teclado móvil para que no tape los resultados.
+        busquedaInputRef.current?.blur();
+        (document.activeElement as HTMLElement | null)?.blur?.();
       } catch (e) {
         if (busquedaIdRef.current !== idBusqueda) return;
+        const msg = e instanceof Error ? e.message : "Error al buscar";
+        // Cooldown de API: no asustar al usuario si sigue escribiendo/probando.
+        if (/espera unos segundos/i.test(msg)) {
+          setError("");
+          return;
+        }
         setResultados([]);
-        setError(e instanceof Error ? e.message : "Error al buscar");
+        setError(msg);
+        busquedaInputRef.current?.blur();
       } finally {
         if (busquedaIdRef.current === idBusqueda) setBuscando(false);
       }
@@ -114,6 +189,32 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
     setError("");
   };
 
+  const buscarPorVoz = () => {
+    if (!speechRecognitionSupported()) {
+      setError("Tu navegador no permite búsqueda por voz.");
+      return;
+    }
+    if (escuchando) {
+      detenerVozRef.current?.();
+      setEscuchando(false);
+      return;
+    }
+    setError("");
+    detenerVozRef.current = startVoiceSearch({
+      onStart: () => setEscuchando(true),
+      onEnd: () => setEscuchando(false),
+      onError: () => {
+        setEscuchando(false);
+        setError("No se pudo escuchar. Revisa el permiso del micrófono.");
+      },
+      onResult: (text) => {
+        setSeleccionado(null);
+        setQuery(text);
+        busquedaInputRef.current?.blur();
+      },
+    });
+  };
+
   const cambiarCancion = () => {
     setSeleccionado(null);
     setSaludo("");
@@ -122,6 +223,32 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
 
   const encolar = useCallback(async () => {
     if (!seleccionado) return;
+
+    if (limiteCola && !limiteCola.puede_encolar) {
+      setError(mensajeLimiteUi(limiteCola, t));
+      return;
+    }
+
+    const checkSaludo = validarSaludo(saludo);
+    if (!checkSaludo.ok) {
+      setError(checkSaludo.error);
+      return;
+    }
+
+    const esperaEnvio = msRestantesRateLimit(`encolar-${numeroMesa}-${nombre}`, COOLDOWNS.encolarMs);
+    if (esperaEnvio > 0) {
+      setError(`Espera ${formatearEspera(esperaEnvio)} antes de enviar otra canción.`);
+      return;
+    }
+
+    if (checkSaludo.valor) {
+      const esperaSaludo = msRestantesRateLimit(`saludo-${numeroMesa}-${nombre}`, COOLDOWNS.saludoMs);
+      if (esperaSaludo > 0) {
+        setError(`Ya enviaste un saludo hace poco. Espera ${formatearEspera(esperaSaludo)}.`);
+        return;
+      }
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -136,6 +263,12 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
         setError(
           "Ese video lo bloquea YouTube en el local. Elige otra versión (busca con “letra” o “karaoke”).",
         );
+        // Evitar que el buscador recupere el foco y abra el teclado encima de los resultados.
+        window.setTimeout(() => {
+          busquedaInputRef.current?.blur();
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 0);
         return;
       }
 
@@ -145,9 +278,13 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
         youtube_video_id: seleccionado.video_id,
         titulo_cancion: seleccionado.titulo,
         nombre_cliente: nombre,
-        saludo: saludo.trim() || undefined,
-        saludo_momento: saludo.trim() ? saludoMomento : undefined,
+        saludo: checkSaludo.valor || undefined,
+        saludo_momento: checkSaludo.valor ? saludoMomento : undefined,
       });
+      marcarRateLimit(`encolar-${numeroMesa}-${nombre}`);
+      if (checkSaludo.valor) marcarRateLimit(`saludo-${numeroMesa}-${nombre}`);
+      if (res.limite) setLimiteCola(res.limite);
+      else void actualizarLimite();
       await actualizarCola();
       const { data } = await supabase
         .from("cola_publica")
@@ -174,24 +311,39 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
         api.invalidarBusquedaVideo(seleccionado.video_id);
         setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
         setSeleccionado(null);
+        window.setTimeout(() => {
+          busquedaInputRef.current?.blur();
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 0);
       }
     } finally {
       setLoading(false);
     }
-  }, [seleccionado, saludo, saludoMomento, nombre, numeroMesa, token, actualizarCola]);
+  }, [seleccionado, saludo, saludoMomento, nombre, numeroMesa, token, actualizarCola, actualizarLimite, limiteCola, t]);
 
   const agregarOtra = () => {
     setExito(null);
     setSeleccionado(null);
   };
 
+  const bloqueado = limiteCola !== null && !limiteCola.puede_encolar;
   const tengoEnCola = cola.some((c) => c.numero_mesa === numeroMesa);
+  const textoCupo = limiteCola
+    ? t.limiteCupo
+      .replace("{usadas}", String(limiteCola.usadas_mesa ?? limiteCola.usadas_persona ?? 0))
+      .replace("{max}", String(limiteCola.max_mesa ?? limiteCola.max_persona ?? 5))
+    : null;
 
   return (
     <div className="step-card">
       <h2 className="step-title"><AccionIcon size={24} /> {t.paso}</h2>
 
-      {error && <div className="error-msg">{error}</div>}
+      {error && (
+        <div className="error-msg" ref={errorRef} role="alert">
+          {error}
+        </div>
+      )}
 
       {exito ? (
         <div className="exito-cola-card">
@@ -220,9 +372,11 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
             );
           })()}
           <div className="exito-cola-acciones">
-            <button className="btn-primary" onClick={agregarOtra}>
-              <AccionIcon size={18} /> {t.otra}
-            </button>
+            {!bloqueado && (
+              <button className="btn-primary" onClick={agregarOtra}>
+                <AccionIcon size={18} /> {t.otra}
+              </button>
+            )}
             <button className="btn-secondary" onClick={onContinuar}>
               {t.irCarta} <ArrowRightIcon size={18} />
             </button>
@@ -234,17 +388,38 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
             <ColaClientePanel cola={cola} numeroMesa={numeroMesa} compacto />
           )}
 
-          {!seleccionado && (
+          {textoCupo && (
+            <p className="search-hint limite-cola-hint">{textoCupo}</p>
+          )}
+
+          {bloqueado && limiteCola && (
+            <div className="error-msg" role="status">
+              {mensajeLimiteUi(limiteCola, t)}
+            </div>
+          )}
+
+          {!seleccionado && !bloqueado && (
             <>
               <div className="search-box">
                 <div className="search-input">
                   <SearchIcon size={18} className="search-input-icon" />
                   <input
+                    ref={busquedaInputRef}
                     placeholder={t.placeholderBusqueda}
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    autoFocus
+                    onChange={(e) => setQuery(validarBusqueda(e.target.value))}
+                    maxLength={LIMITES.busqueda.max}
+                    inputMode="search"
+                    enterKeyHint="search"
                   />
+                  <button
+                    type="button"
+                    className={`voice-search-btn ${escuchando ? "is-listening" : ""}`}
+                    aria-label={escuchando ? "Detener búsqueda por voz" : "Buscar por voz"}
+                    onClick={buscarPorVoz}
+                  >
+                    <MicIcon size={18} />
+                  </button>
                   {(buscando || esperandoEscritura) && (
                     <span className="search-spinner" aria-label={buscando ? "Buscando" : "Esperando"} />
                   )}
@@ -283,7 +458,7 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
             </>
           )}
 
-          {seleccionado && (
+          {seleccionado && !bloqueado && (
             <div className="envio-cancion" ref={envioRef}>
               <div className="envio-cancion-elegida">
                 <div className="envio-cancion-label">{t.elegida}</div>
@@ -306,9 +481,12 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
                 </div>
                 <textarea
                   value={saludo}
-                  onChange={(e) => setSaludo(e.target.value.slice(0, 140))}
+                  onChange={(e) => {
+                    setError("");
+                    setSaludo(e.target.value.slice(0, LIMITES.saludo.max));
+                  }}
                   placeholder={t.saludoPlaceholder}
-                  maxLength={140}
+                  maxLength={LIMITES.saludo.max}
                   rows={2}
                 />
                 {saludo.trim() && (
@@ -331,7 +509,7 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
                     </div>
                   </div>
                 )}
-                <p className="saludo-limite">{saludo.length}/140</p>
+                <p className="saludo-limite">{saludo.length}/{LIMITES.saludo.max} · 1 saludo cada 3 min</p>
               </div>
 
               <button className="btn-primary" onClick={encolar} disabled={loading}>

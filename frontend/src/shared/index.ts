@@ -7,7 +7,29 @@ export type { Perfil } from "./supabase/client";
 export { api } from "./api/karaoke";
 export { adminApi, registrarVisita } from "./api/admin";
 export { obtenerCarta } from "./api/carta";
-export type { ColaItem, VideoResult, KaraokeEstado, TipoZona, MesaInfo } from "./api/karaoke";
+export { speechRecognitionSupported, startVoiceSearch } from "./voiceSearch";
+export {
+  LIMITES,
+  COOLDOWNS,
+  sanitizarInput,
+  validarNombre,
+  validarSaludo,
+  validarBusqueda,
+  contieneContenidoOfensivo,
+  msRestantesRateLimit,
+  marcarRateLimit,
+  formatearEspera,
+} from "./clientValidation";
+export type {
+  ColaItem,
+  LimiteCola,
+  VideoResult,
+  KaraokeEstado,
+  TipoZona,
+  MesaInfo,
+  PedidoMesa,
+  PedidoMesaItem,
+} from "./api/karaoke";
 export type {
   AdminResumen,
   AdminStats,
@@ -15,5 +37,9 @@ export type {
   LlegadaHoy,
   PedidoAdmin,
   PedidoItem,
+  PedidosFiltro,
+  PedidosQuery,
+  PlatoAdmin,
+  CategoriaAdmin,
 } from "./api/admin";
 export type { CategoriaCarta, Plato } from "./api/carta";

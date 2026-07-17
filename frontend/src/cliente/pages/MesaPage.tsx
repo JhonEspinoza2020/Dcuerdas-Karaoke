@@ -80,9 +80,10 @@ export function MesaPage() {
     guardarPaso(numeroMesa, nuevo as Paso);
   };
 
-  const continuarRegistro = () => {
-    guardarDatos(numeroMesa, datos);
-    registrarVisita(numeroMesa, token, datos.nombre, accessToken || undefined).catch(() => {});
+  const continuarRegistro = (finales: ClienteDatos) => {
+    setDatos(finales);
+    guardarDatos(numeroMesa, finales);
+    registrarVisita(numeroMesa, token, finales.nombre, accessToken || undefined).catch(() => {});
     setRegistrado(true);
     irA("karaoke");
   };

@@ -25,8 +25,23 @@ export type KaraokeEstado = {
   abierto: boolean;
   horario: { inicio: string; fin: string; zona_horaria: string };
   limite_canciones_por_mesa: number;
+  ventana_canciones_minutos?: number;
   total_mesas: number;
   mensaje: string;
+};
+
+export type LimiteCola = {
+  max_mesa: number;
+  ventana_minutos: number;
+  usadas_mesa: number;
+  restantes_mesa: number;
+  espera_segundos: number;
+  puede_encolar: boolean;
+  motivo: "limite_mesa" | "limite_persona" | "cola_mesa_llena" | null;
+  /** Compat. */
+  max_persona?: number;
+  usadas_persona?: number;
+  restantes_persona?: number;
 };
 
 export type TipoZona = "mesa" | "karaoke";
@@ -55,6 +70,20 @@ export type ColaItem = {
   posicion?: number;
 };
 
+export type PedidoMesaItem = {
+  id: number;
+  plato_nombre: string;
+  cantidad: number;
+  nota: string | null;
+};
+
+export type PedidoMesa = {
+  id: number;
+  estado: "pendiente" | "en_preparacion" | "listo" | "entregado" | "cancelado";
+  creado_en: string;
+  items: PedidoMesaItem[];
+};
+
 export type VideoResult = {
   video_id: string;
   titulo: string;
@@ -63,8 +92,10 @@ export type VideoResult = {
 };
 
 const busquedaCache = new Map<string, { data: VideoResult[]; expira: number }>();
-/** Caché corto: si no, el celular sigue ofreciendo videos ya bloqueados. */
+/** Caché corto en mesa (evita resultados viejos bloqueados). */
 const CACHE_CLIENTE_MS = 45 * 1000;
+/** Admin: más largo para no gastar cuota al reabrir la misma búsqueda. */
+const CACHE_ADMIN_MS = 10 * 60 * 1000;
 
 function normalizarBusqueda(q: string, _modo?: TipoZona): string {
   let t = q.trim().toLowerCase().replace(/\s+/g, " ");
@@ -80,19 +111,25 @@ export const api = {
   validarMesa: (numero_mesa: number, token: string) =>
     post<MesaInfo>("validar-mesa", { numero_mesa, token }),
 
-  buscarYoutube: async (numero_mesa: number, token: string, q: string, _modo: TipoZona = "musica") => {
+  buscarYoutube: async (numero_mesa: number, token: string, q: string, _modo: "musica" = "musica") => {
     const key = `musica:${normalizarBusqueda(q)}`;
     const cached = busquedaCache.get(key);
     if (cached && cached.expira > Date.now()) {
       return { resultados: cached.data, total: cached.data.length };
     }
-    const res = await post<{ resultados: VideoResult[]; total: number }>("buscar-youtube", {
+    const res = await post<{
+      resultados: VideoResult[];
+      total: number;
+      aviso?: string;
+      fuente?: string;
+    }>("buscar-youtube", {
       numero_mesa,
       token,
       q,
       modo: "musica",
     });
-    if (res.resultados.length > 0) {
+    // No cachear vacíos por cooldown (evita “nunca aparece” durante el wait).
+    if (res.resultados.length > 0 && res.fuente !== "cooldown") {
       busquedaCache.set(key, { data: res.resultados, expira: Date.now() + CACHE_CLIENTE_MS });
     }
     return res;
@@ -106,7 +143,19 @@ export const api = {
     nombre_cliente: string;
     saludo?: string;
     saludo_momento?: "inicio" | "final";
-  }) => post<ColaItem>("encolar-cancion", payload),
+  }) => post<ColaItem & { limite?: LimiteCola }>("encolar-cancion", payload),
+
+  consultarLimiteCola: (
+    numero_mesa: number,
+    token: string,
+    nombre_cliente: string,
+  ) =>
+    post<LimiteCola>("encolar-cancion", {
+      consultar: true,
+      numero_mesa,
+      token,
+      nombre_cliente,
+    }),
 
   colaActiva: (accessToken: string) =>
     fetch(FN("cola-activa"), {
@@ -155,6 +204,48 @@ export const api = {
     }
   },
 
+  adminBuscarYoutube: async (accessToken: string, q: string) => {
+    const key = `admin:${q.trim().toLowerCase().replace(/\s+/g, " ")}`;
+    const cached = busquedaCache.get(key);
+    if (cached && cached.expira > Date.now()) {
+      return { resultados: cached.data, total: cached.data.length };
+    }
+    const res = await fetch(FN("admin-buscar-youtube"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        apikey: ANON,
+      },
+      body: JSON.stringify({ q }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error al buscar");
+    const out = data as { resultados: VideoResult[]; total: number };
+    if (out.resultados?.length) {
+      busquedaCache.set(key, { data: out.resultados, expira: Date.now() + CACHE_ADMIN_MS });
+    }
+    return out;
+  },
+
+  adminEncolarCancion: async (
+    accessToken: string,
+    payload: { youtube_video_id: string; titulo_cancion: string; nombre_cliente?: string },
+  ) => {
+    const res = await fetch(FN("admin-encolar-cancion"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        apikey: ANON,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error al encolar");
+    return data as ColaItem;
+  },
+
   /** Mesa: reporta video que falló el preflight de embed. */
   reportarYoutubeBloqueado: (numero_mesa: number, token: string, video_id: string, motivo = "cliente_preflight") =>
     post<{ ok: boolean }>("reportar-youtube-bloqueado", {
@@ -189,4 +280,10 @@ export const api = {
     telefono?: string;
     items: Array<{ plato_id: number; plato_nombre: string; cantidad: number; nota?: string }>;
   }) => post<{ pedido_id: number; mesa: number; mensaje: string }>("crear-pedido", payload),
+
+  pedidosMesa: (payload: {
+    numero_mesa: number;
+    token: string;
+    pedido_ids?: number[];
+  }) => post<{ pedidos: PedidoMesa[] }>("pedidos-mesa", payload),
 };
