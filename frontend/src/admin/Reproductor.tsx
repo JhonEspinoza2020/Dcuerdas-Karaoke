@@ -478,7 +478,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
 
   completarRef.current = completar;
 
-  /** Suma 1 canción de cola hacia el anuncio (fin natural o Saltar). */
+  /** Suma 1 tema (cola o radio) hacia el anuncio según config. */
   const contarCancionHaciaAnuncio = useCallback(async () => {
     const cfg = anuncioConfigRef.current;
     if (!cfg.activo || cfg.modo !== "canciones") return;
@@ -493,7 +493,10 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     if (procesandoRef.current) return;
     if (radioErrorLockRef.current) return;
     if (rellenoActivoRef.current) {
-      if (!hayPedidoEnCola()) iniciarRelleno();
+      void (async () => {
+        await contarCancionHaciaAnuncio();
+        if (!hayPedidoEnCola()) iniciarRelleno();
+      })();
       return;
     }
     const current = actualRef.current;
@@ -722,9 +725,16 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     }
 
     const actualRadio = videoActualRadioRef.current;
-    if (actualRadio) bloqueadosRadioRef.current.add(actualRadio);
-    if (poolRadioRef.current.length === 0) await cargarPoolRadio();
+    if (actualRadio || rellenoActivoRef.current) {
+      await contarCancionHaciaAnuncio();
+      if (actualRadio) bloqueadosRadioRef.current.add(actualRadio);
+      if (poolRadioRef.current.length === 0) await cargarPoolRadio();
+      radioArrancadaRef.current = false;
+      iniciarRelleno();
+      return;
+    }
 
+    if (poolRadioRef.current.length === 0) await cargarPoolRadio();
     radioArrancadaRef.current = false;
     iniciarRelleno();
   };

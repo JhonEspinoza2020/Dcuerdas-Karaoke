@@ -67,10 +67,10 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
 
         <p className="anuncio-help">
           El anuncio (<code>anuncio.mp3</code>) suena en el <strong>Reproductor</strong>
-          (abre esa pestaña al menos una vez). Cuenta solo canciones de la cola, no la radio ambiente.
+          (abre esa pestaña al menos una vez). Aplica a cola y radio ambiente.
           Hoy: {cfg.activo
             ? cfg.modo === "canciones"
-              ? `cada ${cfg.cadaCanciones} canción${cfg.cadaCanciones === 1 ? "" : "es"} de la cola`
+              ? `cada ${cfg.cadaCanciones} canción${cfg.cadaCanciones === 1 ? "" : "es"}`
               : `cada ${cfg.cadaMinutos} minuto${cfg.cadaMinutos === 1 ? "" : "s"}`
             : "desactivado"}.
         </p>
@@ -82,7 +82,7 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
             onClick={() => setModo("canciones")}
           >
             <strong>Por canciones</strong>
-            <span>Después de N temas pedidos (no radio ambiente)</span>
+            <span>Después de N temas (cola o radio ambiente)</span>
           </button>
           <button
             type="button"
@@ -90,7 +90,7 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
             onClick={() => setModo("minutos")}
           >
             <strong>Por tiempo</strong>
-            <span>Cada ciertos minutos mientras hay sesión de reproductor</span>
+            <span>Cada ciertos minutos con el reproductor en sesión</span>
           </button>
         </div>
 
