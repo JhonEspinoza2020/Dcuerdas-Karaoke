@@ -2,8 +2,8 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1
 
 /** Canciones compartidas por mesa en la ventana. */
 export const MAX_CANCIONES_MESA = 5;
-/** Ventana rodante: al cumplirse 15 min desde la más antigua, libera 1 cupo. */
-export const VENTANA_CANCIONES_MS = 15 * 60 * 1000;
+/** Ventana rodante: al cumplirse 10 min desde la más antigua, libera 1 cupo. */
+export const VENTANA_CANCIONES_MS = 10 * 60 * 1000;
 
 export type LimiteColaResult = {
   max_mesa: number;

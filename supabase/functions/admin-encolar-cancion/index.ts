@@ -2,19 +2,14 @@ import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { verifyAdminAuth } from "../_shared/auth.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 import { videoEsReproducible } from "../_shared/youtube_embed.ts";
-import { exigirRateLimitAdmin } from "../_shared/mesa_rate.ts";
 
+/** Admin encola sin límite de mesa ni rate limit de canciones. */
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
   try {
-    const admin = await verifyAdminAuth(req);
-    await exigirRateLimitAdmin(
-      admin.userId || admin.email,
-      "admin_encolar",
-      30,
-    );
+    await verifyAdminAuth(req);
     const body = await req.json();
     const videoId = String(body.youtube_video_id ?? "").trim();
     const titulo = String(body.titulo_cancion ?? "").trim() || "Sin título";
@@ -89,9 +84,6 @@ Deno.serve(async (req) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";
     if (msg === "admin_no_autorizado") return errorResponse(msg, "No autorizado.", 403);
-    if (msg === "rate_limit") {
-      return errorResponse(msg, "Demasiados encolados. Espera un momento.", 429);
-    }
     return errorResponse("error", "Error al encolar.", 500);
   }
 });

@@ -4,6 +4,12 @@ import { useYouTubePlayer } from "./useYouTubePlayer";
 import { BrandLogo } from "../components/BrandLogo";
 import { leerSaludo } from "./leerSaludo";
 import { AdminBuscadorMusica } from "./AdminBuscadorMusica";
+import {
+  ANUNCIO_CONFIG_EVENT,
+  ANUNCIO_PLAY_NOW_EVENT,
+  leerAnuncioConfig,
+  type AnuncioConfig,
+} from "./anuncioConfig";
 
 type Props = {
   readonly accessToken: string;
@@ -77,6 +83,11 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const radioErrorLockRef = useRef(false);
   const iniciarRellenoRef = useRef<() => void>(() => {});
   const completarRef = useRef<(id: number) => void>(() => {});
+  /** Canciones de cola (clientes) desde el último anuncio. */
+  const cancionesDesdeAnuncioRef = useRef(0);
+  const anuncioAudioRef = useRef<HTMLAudioElement | null>(null);
+  const anuncioConfigRef = useRef<AnuncioConfig>(leerAnuncioConfig());
+  const anuncioMinutosTimerRef = useRef<number | undefined>(undefined);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
   const hayPedidoEnCola = () =>
@@ -277,6 +288,70 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     };
   }, []);
 
+  /** Anuncio de casa según config del panel Anuncios. */
+  const reproducirAnuncio = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      try {
+        anuncioAudioRef.current?.pause();
+        const audio = new Audio("/anuncio.mp3");
+        anuncioAudioRef.current = audio;
+        const volAntes = getVolumeRef.current();
+        setVolumeRef.current(5);
+        let done = false;
+        const fin = () => {
+          if (done) return;
+          done = true;
+          setVolumeRef.current(volAntes || 100);
+          anuncioAudioRef.current = null;
+          resolve();
+        };
+        audio.addEventListener("ended", fin);
+        audio.addEventListener("error", fin);
+        void audio.play().catch(() => fin());
+      } catch {
+        resolve();
+      }
+    });
+  }, []);
+
+  const reiniciarTimerMinutos = useCallback(() => {
+    if (anuncioMinutosTimerRef.current) {
+      window.clearInterval(anuncioMinutosTimerRef.current);
+      anuncioMinutosTimerRef.current = undefined;
+    }
+    const cfg = anuncioConfigRef.current;
+    if (!cfg.activo || cfg.modo !== "minutos" || !sesionActivaRef.current) return;
+    const ms = Math.max(1, cfg.cadaMinutos) * 60_000;
+    anuncioMinutosTimerRef.current = window.setInterval(() => {
+      if (!sesionActivaRef.current) return;
+      if (!anuncioConfigRef.current.activo) return;
+      if (anuncioConfigRef.current.modo !== "minutos") return;
+      void reproducirAnuncio();
+    }, ms);
+  }, [reproducirAnuncio]);
+
+  useEffect(() => {
+    const syncConfig = () => {
+      anuncioConfigRef.current = leerAnuncioConfig();
+      reiniciarTimerMinutos();
+    };
+    const onPlayNow = () => {
+      void reproducirAnuncio();
+    };
+    window.addEventListener(ANUNCIO_CONFIG_EVENT, syncConfig);
+    window.addEventListener("storage", syncConfig);
+    window.addEventListener(ANUNCIO_PLAY_NOW_EVENT, onPlayNow);
+    syncConfig();
+    return () => {
+      window.removeEventListener(ANUNCIO_CONFIG_EVENT, syncConfig);
+      window.removeEventListener("storage", syncConfig);
+      window.removeEventListener(ANUNCIO_PLAY_NOW_EVENT, onPlayNow);
+      if (anuncioMinutosTimerRef.current) {
+        window.clearInterval(anuncioMinutosTimerRef.current);
+      }
+    };
+  }, [reproducirAnuncio, reiniciarTimerMinutos]);
+
   const iniciarCancion = useCallback(async (cancion: ColaItem) => {
     if (procesandoRef.current) return;
     if (actualRef.current?.id === cancion.id) return;
@@ -349,15 +424,31 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       if (!hayPedidoEnCola()) iniciarRelleno();
       return;
     }
+
+    const terminarConPosibleAnuncio = async () => {
+      const cfg = anuncioConfigRef.current;
+      if (cfg.activo && cfg.modo === "canciones") {
+        cancionesDesdeAnuncioRef.current += 1;
+        const cada = Math.max(1, cfg.cadaCanciones);
+        if (cancionesDesdeAnuncioRef.current >= cada) {
+          cancionesDesdeAnuncioRef.current = 0;
+          await reproducirAnuncio();
+        }
+      }
+      await completar(current.id);
+    };
+
     const momentoFinal =
       !!current.saludo?.trim() && (current.saludo_momento ?? "inicio") === "final";
     if (momentoFinal && !saludoFinalPendienteRef.current) {
       saludoFinalPendienteRef.current = true;
-      presentarSaludo(current, () => completar(current.id));
+      presentarSaludo(current, () => {
+        void terminarConPosibleAnuncio();
+      });
       return;
     }
-    completar(current.id);
-  }, [completar, iniciarRelleno, presentarSaludo]);
+    void terminarConPosibleAnuncio();
+  }, [completar, iniciarRelleno, presentarSaludo, reproducirAnuncio]);
 
   const onError = useCallback((_code: number) => {
     if (procesandoRef.current) return;
@@ -493,6 +584,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const acabaDeAbrir = !visibleAntesRef.current;
     visibleAntesRef.current = true;
     sesionActivaRef.current = true;
+    reiniciarTimerMinutos();
 
     if (!acabaDeAbrir) {
       if (rellenoActivoRef.current && !pausaUsuarioRef.current) resumeRef.current();
@@ -513,12 +605,14 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         resumeRef.current();
       }
     })();
-  }, [visible, ready, iniciarRelleno, cargarPoolRadio]);
+  }, [visible, ready, iniciarRelleno, cargarPoolRadio, reiniciarTimerMinutos]);
 
   const proximas = cola.filter((c) => c.estado === "pendiente");
 
   const saltar = async () => {
     cancelarVozRef.current();
+    anuncioAudioRef.current?.pause();
+    anuncioAudioRef.current = null;
     setMostrarSaludo(false);
     saludoFinalPendienteRef.current = false;
     pausaUsuarioRef.current = false;

@@ -200,6 +200,98 @@ Deno.serve(async (req) => {
       return jsonResponse(data);
     }
 
+    if (req.method === "DELETE" && recurso === "platos") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id) || id <= 0) throw new Error("id_invalido");
+
+      const { count: usados } = await supabase
+        .from("pedido_items")
+        .select("id", { count: "exact", head: true })
+        .eq("plato_id", id);
+
+      if ((usados ?? 0) > 0) {
+        const { error } = await supabase
+          .from("platos")
+          .update({ disponible: false, actualizado_en: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        return jsonResponse({
+          ok: true,
+          soft: true,
+          mensaje: "El plato ya estuvo en pedidos: se ocultó (no se borró del historial).",
+        });
+      }
+
+      const { error } = await supabase.from("platos").delete().eq("id", id);
+      if (error) throw error;
+      return jsonResponse({ ok: true, soft: false, mensaje: "Plato eliminado." });
+    }
+
+    if (req.method === "DELETE" && recurso === "categorias") {
+      const id = Number(body.id);
+      if (!Number.isInteger(id) || id <= 0) throw new Error("id_invalido");
+
+      const { data: platosCat, error: platosErr } = await supabase
+        .from("platos")
+        .select("id")
+        .eq("categoria_id", id);
+      if (platosErr) throw platosErr;
+
+      const platoIds = (platosCat ?? []).map((p) => p.id as number);
+      let soft = false;
+
+      if (platoIds.length > 0) {
+        const { data: usadosRows } = await supabase
+          .from("pedido_items")
+          .select("plato_id")
+          .in("plato_id", platoIds);
+        const usados = new Set((usadosRows ?? []).map((r) => r.plato_id as number));
+        const borrables = platoIds.filter((pid) => !usados.has(pid));
+        const ocultar = platoIds.filter((pid) => usados.has(pid));
+
+        if (borrables.length > 0) {
+          const { error } = await supabase.from("platos").delete().in("id", borrables);
+          if (error) throw error;
+        }
+        if (ocultar.length > 0) {
+          soft = true;
+          const { error } = await supabase
+            .from("platos")
+            .update({ disponible: false, actualizado_en: new Date().toISOString() })
+            .in("id", ocultar);
+          if (error) throw error;
+        }
+      }
+
+      const { count: quedan } = await supabase
+        .from("platos")
+        .select("id", { count: "exact", head: true })
+        .eq("categoria_id", id);
+
+      if ((quedan ?? 0) > 0) {
+        const { error } = await supabase
+          .from("categorias_carta")
+          .update({ activa: false, actualizado_en: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        return jsonResponse({
+          ok: true,
+          soft: true,
+          mensaje: "Categoría desactivada: había platos en historial de pedidos.",
+        });
+      }
+
+      const { error } = await supabase.from("categorias_carta").delete().eq("id", id);
+      if (error) throw error;
+      return jsonResponse({
+        ok: true,
+        soft,
+        mensaje: soft
+          ? "Categoría eliminada. Algunos platos del historial quedaron ocultos."
+          : "Categoría eliminada.",
+      });
+    }
+
     return errorResponse("ruta_invalida", "Recurso o método no soportado.", 400);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";

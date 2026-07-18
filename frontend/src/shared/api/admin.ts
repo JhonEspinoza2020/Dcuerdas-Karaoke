@@ -132,6 +132,35 @@ export const adminApi = {
   categorias: (accessToken: string) =>
     adminJson<CategoriaAdmin[]>(accessToken, `${FN("admin-carta")}?recurso=categorias`),
 
+  crearCategoria: (
+    accessToken: string,
+    body: {
+      nombre: string;
+      descripcion?: string | null;
+      orden?: number;
+      activa?: boolean;
+    },
+  ) =>
+    adminJson<CategoriaAdmin>(accessToken, `${FN("admin-carta")}?recurso=categorias`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  actualizarCategoria: (
+    accessToken: string,
+    body: {
+      id: number;
+      nombre?: string;
+      descripcion?: string | null;
+      orden?: number;
+      activa?: boolean;
+    },
+  ) =>
+    adminJson<CategoriaAdmin>(accessToken, `${FN("admin-carta")}?recurso=categorias`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   platos: (accessToken: string) =>
     adminJson<PlatoAdmin[]>(accessToken, `${FN("admin-carta")}?recurso=platos`),
 
@@ -165,6 +194,26 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+
+  eliminarPlato: (accessToken: string, id: number) =>
+    adminJson<{ ok: boolean; soft?: boolean; mensaje?: string }>(
+      accessToken,
+      `${FN("admin-carta")}?recurso=platos`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ id }),
+      },
+    ),
+
+  eliminarCategoria: (accessToken: string, id: number) =>
+    adminJson<{ ok: boolean; soft?: boolean; mensaje?: string }>(
+      accessToken,
+      `${FN("admin-carta")}?recurso=categorias`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ id }),
+      },
+    ),
 
   verificarAdmin: (accessToken: string) =>
     fetch(FN("verificar-admin"), { headers: adminHeaders(accessToken) }).then((r) => r.json()),

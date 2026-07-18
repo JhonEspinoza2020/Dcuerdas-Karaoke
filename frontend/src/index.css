@@ -14,6 +14,12 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body, #root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--bg);
@@ -1175,6 +1181,9 @@ a { color: inherit; }
   min-height: 100dvh;
   display: flex;
   background: var(--bg);
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100%;
 }
 .admin-sidebar {
   width: 240px;
@@ -1329,7 +1338,10 @@ a { color: inherit; }
 .admin-content {
   flex: 1;
   padding: 24px;
+  overflow-x: hidden;
   overflow-y: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .admin-panel { max-width: 1200px; margin: 0 auto; }
@@ -1569,6 +1581,114 @@ a { color: inherit; }
   border: 1px solid rgba(76,175,80,.3);
   border-radius: 10px;
 }
+.carta-cats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.carta-cats-card {
+  margin-bottom: 18px;
+}
+.carta-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.carta-btn-danger {
+  color: #e85d5d !important;
+}
+.anuncio-panel .admin-panel-head h1 { margin: 0; }
+.anuncio-help {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.anuncio-help code {
+  font-size: 0.85em;
+  color: var(--accent-gold);
+}
+.anuncio-switch { margin: 0; }
+.anuncio-modo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.anuncio-modo-card {
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.18);
+  color: var(--text);
+  cursor: pointer;
+}
+.anuncio-modo-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.anuncio-modo-card span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.anuncio-modo-card.is-on {
+  border-color: rgba(232,93,4,.5);
+  background: rgba(232,93,4,.12);
+}
+.anuncio-field {
+  max-width: 280px;
+  margin-bottom: 16px;
+}
+.anuncio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.anuncio-actions .btn-primary,
+.anuncio-actions .btn-secondary {
+  width: auto;
+  min-width: 140px;
+}
+
+.carta-cats-create {
+  margin-top: 12px;
+}
+.carta-cat-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.carta-cat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2, rgba(255,255,255,.03));
+}
+.carta-cat-row.is-hidden { opacity: .55; }
+.carta-cat-row strong { display: inline; margin: 0; }
+.carta-cat-row p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.carta-cat-row .carta-status { margin-left: 0; }
+.carta-cat-row .carta-edit-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .carta-create-card {
   position: relative;
   margin-bottom: 18px;
@@ -1701,6 +1821,32 @@ a { color: inherit; }
 }
 .carta-plato-card.is-editing:hover {
   transform: none;
+}
+.carta-plato-card.is-selected {
+  border-color: rgba(232,93,4,.55);
+  box-shadow: 0 0 0 1px rgba(232,93,4,.25);
+}
+.carta-edit-panel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid rgba(232,93,4,.4);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(232,93,4,.1), transparent 55%),
+    rgba(0,0,0,.22);
+}
+.carta-edit-panel-grid {
+  margin-top: 8px;
+}
+.carta-edit-panel .carta-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.carta-edit-panel .carta-edit-actions .btn-primary,
+.carta-edit-panel .carta-edit-actions .btn-secondary {
+  width: auto;
+  min-width: 140px;
 }
 .carta-plato-card:hover {
   transform: translateY(-2px);
@@ -2318,14 +2464,20 @@ a { color: inherit; }
 
 /* ── Reproductor (se duplica a la TV) ── */
 .reproductor-wrap { max-width: 1100px; margin: 0 auto; }
-/* Mantiene el reproductor vivo (audio/video) aunque el admin cambie de menú,
-   ubicándolo fuera de la pantalla en vez de desmontarlo. */
+/* Mantiene el reproductor vivo al cambiar de menú, sin agrandar el scroll horizontal. */
 .repro-persist--hidden {
   position: fixed;
-  left: -100000px;
+  left: 0;
   top: 0;
-  width: 1000px;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
   pointer-events: none;
+  z-index: -1;
+  contain: strict;
 }
 .reproductor-controles {
   display: flex;

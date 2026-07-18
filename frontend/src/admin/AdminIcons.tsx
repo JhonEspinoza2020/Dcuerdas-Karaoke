@@ -88,6 +88,16 @@ export function MenuIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function MegaphoneIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M3 11v2a1 1 0 0 0 1 1h1l5 4V6L5 10H4a1 1 0 0 0-1 1z" />
+      <path d="M15.5 8.5a4.5 4.5 0 0 1 0 7" />
+      <path d="M17.5 6a8 8 0 0 1 0 12" />
+    </svg>
+  );
+}
+
 export function LogoutIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size, className)}>

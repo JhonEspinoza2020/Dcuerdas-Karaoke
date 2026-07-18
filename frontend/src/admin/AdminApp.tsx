@@ -8,6 +8,7 @@ import { DashboardPanel } from "./DashboardPanel";
 import { ClientesPanel } from "./ClientesPanel";
 import { PedidosPanel } from "./PedidosPanel";
 import { CartaPanel } from "./CartaPanel";
+import { AnunciosPanel } from "./AnunciosPanel";
 import { BrandLogo } from "../components/BrandLogo";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import {
@@ -20,9 +21,10 @@ import {
   LogoutIcon,
   SoundWaveSilhouette,
   MenuIcon,
+  MegaphoneIcon,
 } from "./AdminIcons";
 
-type Tab = "dashboard" | "clientes" | "pedidos" | "carta" | "cola" | "reproductor" | "qrs";
+type Tab = "dashboard" | "clientes" | "pedidos" | "carta" | "anuncios" | "cola" | "reproductor" | "qrs";
 
 const NAV: { id: Tab; label: string; icon: typeof DashboardIcon }[] = [
   { id: "dashboard", label: "Resumen", icon: DashboardIcon },
@@ -31,6 +33,7 @@ const NAV: { id: Tab; label: string; icon: typeof DashboardIcon }[] = [
   { id: "reproductor", label: "Reproductor", icon: TvIcon },
   { id: "clientes", label: "Clientes", icon: UsersIcon },
   { id: "carta", label: "Carta", icon: MenuIcon },
+  { id: "anuncios", label: "Anuncios", icon: MegaphoneIcon },
   { id: "qrs", label: "Códigos QR", icon: QrIcon },
 ];
 
@@ -242,7 +245,11 @@ export function AdminApp() {
           </span>
         </header>
 
-        <main className="admin-content">
+        <main
+          className="admin-content"
+          style={{ display: tab === "reproductor" ? "none" : undefined }}
+          aria-hidden={tab === "reproductor"}
+        >
           {tab === "dashboard" && <DashboardPanel accessToken={accessToken} />}
           {tab === "clientes" && <ClientesPanel accessToken={accessToken} />}
           {tab === "pedidos" && (
@@ -252,6 +259,7 @@ export function AdminApp() {
             />
           )}
           {tab === "carta" && <CartaPanel accessToken={accessToken} />}
+          {tab === "anuncios" && <AnunciosPanel accessToken={accessToken} />}
           {tab === "cola" && (
             <ColaPanel
               accessToken={accessToken}
@@ -259,17 +267,19 @@ export function AdminApp() {
             />
           )}
           {tab === "qrs" && <QRsPanel accessToken={accessToken} />}
-          <div
-            className={tab === "reproductor" ? "" : "repro-persist--hidden"}
-            aria-hidden={tab !== "reproductor"}
-          >
-            <Reproductor
-              accessToken={accessToken}
-              visible={tab === "reproductor"}
-              onPlayingChange={setMusicaSonando}
-            />
-          </div>
         </main>
+        <div
+          className={
+            tab === "reproductor" ? "admin-content" : "repro-persist--hidden"
+          }
+          aria-hidden={tab !== "reproductor"}
+        >
+          <Reproductor
+            accessToken={accessToken}
+            visible={tab === "reproductor"}
+            onPlayingChange={setMusicaSonando}
+          />
+        </div>
       </div>
     </div>
   );
