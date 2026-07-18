@@ -478,6 +478,17 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
 
   completarRef.current = completar;
 
+  /** Suma 1 canción de cola hacia el anuncio (fin natural o Saltar). */
+  const contarCancionHaciaAnuncio = useCallback(async () => {
+    const cfg = anuncioConfigRef.current;
+    if (!cfg.activo || cfg.modo !== "canciones") return;
+    cancionesDesdeAnuncioRef.current += 1;
+    const cada = Math.max(1, cfg.cadaCanciones);
+    if (cancionesDesdeAnuncioRef.current < cada) return;
+    cancionesDesdeAnuncioRef.current = 0;
+    await reproducirAnuncio({ reanudar: false });
+  }, [reproducirAnuncio]);
+
   const onEnded = useCallback(() => {
     if (procesandoRef.current) return;
     if (radioErrorLockRef.current) return;
@@ -492,16 +503,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     }
 
     const terminarConPosibleAnuncio = async () => {
-      const cfg = anuncioConfigRef.current;
-      if (cfg.activo && cfg.modo === "canciones") {
-        cancionesDesdeAnuncioRef.current += 1;
-        const cada = Math.max(1, cfg.cadaCanciones);
-        if (cancionesDesdeAnuncioRef.current >= cada) {
-          cancionesDesdeAnuncioRef.current = 0;
-          // No reanudar el video terminado; completar() pone el siguiente.
-          await reproducirAnuncio({ reanudar: false });
-        }
-      }
+      await contarCancionHaciaAnuncio();
       await completar(current.id);
     };
 
@@ -515,7 +517,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
     void terminarConPosibleAnuncio();
-  }, [completar, iniciarRelleno, presentarSaludo, reproducirAnuncio]);
+  }, [completar, iniciarRelleno, presentarSaludo, contarCancionHaciaAnuncio]);
 
   const onError = useCallback((_code: number) => {
     if (procesandoRef.current) return;
@@ -695,7 +697,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
 
     const current = actualRef.current;
     if (current) {
-      completar(current.id);
+      // Saltar una canción de cola también cuenta para el anuncio.
+      await contarCancionHaciaAnuncio();
+      await completar(current.id);
       return;
     }
 
@@ -711,7 +715,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         (c) => !completadasRef.current.has(c.id) && c.estado === "reproduciendo",
       );
       if (enCurso) {
-        completar(enCurso.id);
+        await contarCancionHaciaAnuncio();
+        await completar(enCurso.id);
         return;
       }
     }
