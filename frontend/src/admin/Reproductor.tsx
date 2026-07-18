@@ -277,7 +277,10 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const cerrar = () => {
       if (cerrado) return;
       cerrado = true;
-      setVolumeRef.current(volAntes || 100);
+      setVolumeRef.current(volAntes > 5 ? volAntes : 100);
+      // La voz (TTS) a veces pausa el iframe de YouTube; hay que reanudarlo.
+      pausaUsuarioRef.current = false;
+      resumeRef.current();
       setMostrarSaludo(false);
       onListo?.();
     };
