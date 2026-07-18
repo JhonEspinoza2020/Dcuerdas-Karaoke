@@ -10,6 +10,11 @@ import {
   registrarBusquedaApi,
 } from "./youtube_cuota.ts";
 import { filtrarReproduciblesCompleto } from "./youtube_embed.ts";
+import {
+  fetchYoutubeConRotacion,
+  pickYoutubeApiKey,
+  youtubeKeysCount,
+} from "./youtube_keys.ts";
 
 function scorePreferencia(titulo: string): number {
   const t = titulo.toLowerCase();
@@ -52,7 +57,7 @@ export async function ejecutarBusquedaYoutube(opts: {
     return { resultados: [], total: 0, cache: "skip", fuente: "skip" };
   }
 
-  const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
+  const apiKey = pickYoutubeApiKey();
 
   const enCache = await leerCacheYoutube(termino);
   if (enCache?.length) {
@@ -90,20 +95,22 @@ export async function ejecutarBusquedaYoutube(opts: {
     throw new Error("cuota_youtube");
   }
 
-  if (!apiKey) throw new Error("youtube_no_configurado");
+  if (youtubeKeysCount() === 0) throw new Error("youtube_no_configurado");
 
-  const params = new URLSearchParams({
-    part: "snippet",
-    q: termino,
-    type: "video",
-    maxResults: "20",
-    videoEmbeddable: "true",
-    videoSyndicated: "true",
-    safeSearch: "moderate",
-    key: apiKey,
+  const res = await fetchYoutubeConRotacion((key) => {
+    const params = new URLSearchParams({
+      part: "snippet",
+      q: termino,
+      type: "video",
+      maxResults: "20",
+      videoEmbeddable: "true",
+      videoSyndicated: "true",
+      safeSearch: "moderate",
+      key,
+    });
+    return `https://www.googleapis.com/youtube/v3/search?${params}`;
   });
 
-  const res = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
   if (!res.ok) {
     if (aprox.length > 0) {
       const resultados = ordenarPreferenciaSuave(
@@ -139,7 +146,7 @@ export async function ejecutarBusquedaYoutube(opts: {
     });
 
   const resultados = ordenarPreferenciaSuave(
-    await filtrarReproduciblesCompleto(candidatos, apiKey),
+    await filtrarReproduciblesCompleto(candidatos, pickYoutubeApiKey()),
   );
   if (resultados.length > 0) await guardarCacheYoutube(termino, resultados);
 

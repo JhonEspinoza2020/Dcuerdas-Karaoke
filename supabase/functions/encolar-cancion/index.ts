@@ -9,6 +9,7 @@ import {
   mensajeLimiteCola,
 } from "../_shared/cola_limite.ts";
 import { exigirCooldownMesa } from "../_shared/mesa_rate.ts";
+import { pickYoutubeApiKey } from "../_shared/youtube_keys.ts";
 
 const MAX_SALUDO_CHARS = 140;
 const MAX_TITULO = 200;
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
       return errorResponse("video_invalido", "Elige otra canción de la lista.", 400);
     }
 
-    const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
+    const apiKey = pickYoutubeApiKey();
     const check = await videoEsReproducible(videoId, apiKey);
     if (!check.ok) {
       return errorResponse(

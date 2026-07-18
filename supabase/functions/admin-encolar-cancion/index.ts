@@ -2,6 +2,7 @@ import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { verifyAdminAuth } from "../_shared/auth.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 import { videoEsReproducible } from "../_shared/youtube_embed.ts";
+import { pickYoutubeApiKey } from "../_shared/youtube_keys.ts";
 
 /** Admin encola sin límite de mesa ni rate limit de canciones. */
 Deno.serve(async (req) => {
@@ -19,7 +20,7 @@ Deno.serve(async (req) => {
       return errorResponse("video_invalido", "Elige otra canción de la lista.", 400);
     }
 
-    const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
+    const apiKey = pickYoutubeApiKey();
     const check = await videoEsReproducible(videoId, apiKey);
     if (!check.ok) {
       return errorResponse(

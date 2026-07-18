@@ -1,9 +1,15 @@
 import { createServiceClient } from "./supabase.ts";
+import { youtubeKeysCount } from "./youtube_keys.ts";
 
-/** Máximo de search.list por día (Lima). Ajusta con secret YOUTUBE_MAX_BUSQUEDAS_DIA. */
+/**
+ * Tope de search.list por día (Lima) a nivel app.
+ * Por defecto: ~100 por cada API key configurada (mín. 90).
+ * Override: secret YOUTUBE_MAX_BUSQUEDAS_DIA.
+ */
 export function maxBusquedasDia(): number {
-  const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? "90");
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 90;
+  const auto = Math.max(90, youtubeKeysCount() * 100);
+  const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? String(auto));
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : auto;
 }
 
 /** Segundos mínimos entre dos search.list de la misma mesa. */

@@ -16,6 +16,11 @@ import {
 } from "../_shared/youtube_cuota.ts";
 import { filtrarReproduciblesCompleto } from "../_shared/youtube_embed.ts";
 import { exigirCooldownMesa } from "../_shared/mesa_rate.ts";
+import {
+  fetchYoutubeConRotacion,
+  pickYoutubeApiKey,
+  youtubeKeysCount,
+} from "../_shared/youtube_keys.ts";
 
 /**
  * Preferencia suave (no filtra): karaoke/letra un poco arriba.
@@ -70,7 +75,7 @@ Deno.serve(async (req) => {
       throw e;
     }
 
-    const apiKey = Deno.env.get("YOUTUBE_API_KEY") ?? null;
+    const apiKey = pickYoutubeApiKey();
 
     const enCache = await leerCacheYoutube(termino);
     if (enCache?.length) {
@@ -141,23 +146,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!apiKey) {
+    if (youtubeKeysCount() === 0) {
       return errorResponse("youtube_no_configurado", "La búsqueda estará disponible pronto.", 503);
     }
 
-    // Más candidatos: el filtro de embed descarta bastantes.
-    const params = new URLSearchParams({
-      part: "snippet",
-      q: termino,
-      type: "video",
-      maxResults: "20",
-      videoEmbeddable: "true",
-      videoSyndicated: "true",
-      safeSearch: "moderate",
-      key: apiKey,
+    const res = await fetchYoutubeConRotacion((key) => {
+      const params = new URLSearchParams({
+        part: "snippet",
+        q: termino,
+        type: "video",
+        maxResults: "20",
+        videoEmbeddable: "true",
+        videoSyndicated: "true",
+        safeSearch: "moderate",
+        key,
+      });
+      return `https://www.googleapis.com/youtube/v3/search?${params}`;
     });
 
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
     if (!res.ok) {
       if (aprox.length > 0) {
         const resultados = ordenarPreferenciaSuave(
@@ -191,7 +197,7 @@ Deno.serve(async (req) => {
       });
 
     const resultados = ordenarPreferenciaSuave(
-      await filtrarReproduciblesCompleto(candidatos, apiKey),
+      await filtrarReproduciblesCompleto(candidatos, pickYoutubeApiKey()),
     );
 
     if (resultados.length > 0) {
