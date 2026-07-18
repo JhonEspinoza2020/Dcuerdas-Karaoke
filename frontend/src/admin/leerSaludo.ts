@@ -59,8 +59,8 @@ function armarTrozos(textoOriginal: string): Trozo[] {
   });
 }
 
-const REPETICIONES_SALUDO = 2;
-/** Pausa entre la 1.ª y la 2.ª lectura del mismo saludo. */
+const REPETICIONES_SALUDO = 1;
+/** Pausa entre repeticiones (si REPETICIONES_SALUDO > 1). */
 const PAUSA_ENTRE_REPETICIONES_MS = 650;
 
 export function leerSaludo(
@@ -77,6 +77,7 @@ export function leerSaludo(
   let pausaTimer: number | undefined;
   let keepAlive: number | undefined;
   let started = false;
+  let yaInicio = false;
   window.speechSynthesis.cancel();
 
   const guionBase = armarTrozos(limpio);
@@ -138,7 +139,8 @@ export function leerSaludo(
   };
 
   const iniciar = () => {
-    if (cancelado) return;
+    if (cancelado || yaInicio) return;
+    yaInicio = true;
     keepAlive = window.setInterval(() => {
       if (cancelado) return;
       if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {

@@ -282,8 +282,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       onListo?.();
     };
     const cancelarVoz = leerSaludo(texto, { onEnd: cerrar });
-    // Dos lecturas del saludo: margen amplio por si el texto es largo.
-    const tope = window.setTimeout(cerrar, 56000);
+    // Una sola lectura; margen por si el texto es largo.
+    const tope = window.setTimeout(cerrar, 40000);
     cancelarVozRef.current = () => {
       window.clearTimeout(tope);
       cancelarVoz();
