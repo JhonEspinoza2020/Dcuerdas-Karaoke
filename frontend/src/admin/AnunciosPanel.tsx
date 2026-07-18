@@ -66,7 +66,8 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
         </div>
 
         <p className="anuncio-help">
-          El anuncio (<code>anuncio.mp3</code>) se reproduce en el <strong>Reproductor</strong>.
+          El anuncio (<code>anuncio.mp3</code>) suena en el <strong>Reproductor</strong>
+          (abre esa pestaña al menos una vez). Cuenta solo canciones de la cola, no la radio ambiente.
           Hoy: {cfg.activo
             ? cfg.modo === "canciones"
               ? `cada ${cfg.cadaCanciones} canción${cfg.cadaCanciones === 1 ? "" : "es"} de la cola`
@@ -101,13 +102,14 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
               min={1}
               max={10}
               value={cfg.cadaCanciones}
-              onChange={(e) =>
-                setCfg((c) => ({
-                  ...c,
-                  cadaCanciones: Number(e.target.value) || 1,
-                }))
-              }
-              onBlur={() => guardar(cfg)}
+              onChange={(e) => {
+                const cadaCanciones = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                setCfg((c) => ({ ...c, cadaCanciones }));
+              }}
+              onBlur={(e) => {
+                const cadaCanciones = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                guardar({ ...cfg, cadaCanciones });
+              }}
             />
           </label>
         ) : (
@@ -118,13 +120,14 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
               min={1}
               max={15}
               value={cfg.cadaMinutos}
-              onChange={(e) =>
-                setCfg((c) => ({
-                  ...c,
-                  cadaMinutos: Number(e.target.value) || 1,
-                }))
-              }
-              onBlur={() => guardar(cfg)}
+              onChange={(e) => {
+                const cadaMinutos = Math.min(15, Math.max(1, Number(e.target.value) || 1));
+                setCfg((c) => ({ ...c, cadaMinutos }));
+              }}
+              onBlur={(e) => {
+                const cadaMinutos = Math.min(15, Math.max(1, Number(e.target.value) || 1));
+                guardar({ ...cfg, cadaMinutos });
+              }}
             />
           </label>
         )}

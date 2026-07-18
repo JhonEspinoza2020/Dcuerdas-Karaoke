@@ -321,7 +321,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   }, [asegurarAudioAnuncio]);
 
   /** Anuncio de casa según config del panel Anuncios. */
-  const reproducirAnuncio = useCallback((): Promise<void> => {
+  const reproducirAnuncio = useCallback((opts?: { reanudar?: boolean }): Promise<void> => {
+    const reanudar = opts?.reanudar !== false;
     return new Promise((resolve) => {
       if (anuncioReproduciendoRef.current) {
         resolve();
@@ -340,15 +341,14 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           done = true;
           anuncioReproduciendoRef.current = false;
           setVolumeRef.current(volAntes || 100);
-          if (!pausaUsuarioRef.current) resumeRef.current();
+          // Tras fin de canción de cola no reanudar: completar() carga el siguiente.
+          if (reanudar && !pausaUsuarioRef.current) resumeRef.current();
           resolve();
         };
 
         audio.pause();
         audio.currentTime = 0;
         audio.volume = 1;
-        audio.onended = fin;
-        audio.onerror = () => fin();
         const tope = window.setTimeout(fin, 60_000);
         const finConTope = () => {
           window.clearTimeout(tope);
@@ -383,18 +383,23 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       if (!anuncioConfigRef.current.activo) return;
       if (anuncioConfigRef.current.modo !== "minutos") return;
       if (anuncioReproduciendoRef.current) return;
-      void reproducirAnuncio();
+      void reproducirAnuncio({ reanudar: true });
     }, ms);
   }, [reproducirAnuncio]);
 
   useEffect(() => {
     const syncConfig = () => {
-      anuncioConfigRef.current = leerAnuncioConfig();
+      const prev = anuncioConfigRef.current;
+      const next = leerAnuncioConfig();
+      anuncioConfigRef.current = next;
+      if (prev.modo !== next.modo || prev.cadaCanciones !== next.cadaCanciones) {
+        cancionesDesdeAnuncioRef.current = 0;
+      }
       reiniciarTimerMinutos();
     };
     const onPlayNow = () => {
       desbloquearAudioAnuncio();
-      void reproducirAnuncio();
+      void reproducirAnuncio({ reanudar: true });
     };
     const onPointer = () => desbloquearAudioAnuncio();
     window.addEventListener(ANUNCIO_CONFIG_EVENT, syncConfig);
@@ -493,7 +498,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         const cada = Math.max(1, cfg.cadaCanciones);
         if (cancionesDesdeAnuncioRef.current >= cada) {
           cancionesDesdeAnuncioRef.current = 0;
-          await reproducirAnuncio();
+          // No reanudar el video terminado; completar() pone el siguiente.
+          await reproducirAnuncio({ reanudar: false });
         }
       }
       await completar(current.id);
