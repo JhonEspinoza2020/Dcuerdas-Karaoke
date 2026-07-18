@@ -72,6 +72,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const preferidasRef = useRef<Set<string>>(new Set());
   const playRef = useRef<(id: string) => void>(() => {});
   const resumeRef = useRef<() => void>(() => {});
+  const pauseRef = useRef<() => void>(() => {});
   const setVolumeRef = useRef<(v: number) => void>(() => {});
   const getVolumeRef = useRef<() => number>(() => 100);
   const cancelarVozRef = useRef<() => void>(() => {});
@@ -88,6 +89,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const anuncioAudioRef = useRef<HTMLAudioElement | null>(null);
   const anuncioConfigRef = useRef<AnuncioConfig>(leerAnuncioConfig());
   const anuncioMinutosTimerRef = useRef<number | undefined>(undefined);
+  const anuncioUnlockRef = useRef(false);
+  const anuncioReproduciendoRef = useRef(false);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
   const hayPedidoEnCola = () =>
@@ -288,31 +291,84 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     };
   }, []);
 
+  /** Prepara el Audio del anuncio (debe llamarse tras un click del admin). */
+  const asegurarAudioAnuncio = useCallback(() => {
+    if (!anuncioAudioRef.current) {
+      const audio = new Audio("/anuncio.mp3");
+      audio.preload = "auto";
+      audio.volume = 1;
+      anuncioAudioRef.current = audio;
+    }
+    return anuncioAudioRef.current;
+  }, []);
+
+  const desbloquearAudioAnuncio = useCallback(() => {
+    const audio = asegurarAudioAnuncio();
+    if (anuncioUnlockRef.current) return;
+    const prev = audio.volume;
+    audio.volume = 0.001;
+    void audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = prev || 1;
+        anuncioUnlockRef.current = true;
+      })
+      .catch(() => {
+        audio.volume = prev || 1;
+      });
+  }, [asegurarAudioAnuncio]);
+
   /** Anuncio de casa según config del panel Anuncios. */
   const reproducirAnuncio = useCallback((): Promise<void> => {
     return new Promise((resolve) => {
+      if (anuncioReproduciendoRef.current) {
+        resolve();
+        return;
+      }
       try {
-        anuncioAudioRef.current?.pause();
-        const audio = new Audio("/anuncio.mp3");
-        anuncioAudioRef.current = audio;
+        const audio = asegurarAudioAnuncio();
+        anuncioReproduciendoRef.current = true;
         const volAntes = getVolumeRef.current();
-        setVolumeRef.current(5);
+        pauseRef.current();
+        setVolumeRef.current(0);
+
         let done = false;
         const fin = () => {
           if (done) return;
           done = true;
+          anuncioReproduciendoRef.current = false;
           setVolumeRef.current(volAntes || 100);
-          anuncioAudioRef.current = null;
+          if (!pausaUsuarioRef.current) resumeRef.current();
           resolve();
         };
-        audio.addEventListener("ended", fin);
-        audio.addEventListener("error", fin);
-        void audio.play().catch(() => fin());
+
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = 1;
+        audio.onended = fin;
+        audio.onerror = () => fin();
+        const tope = window.setTimeout(fin, 60_000);
+        const finConTope = () => {
+          window.clearTimeout(tope);
+          fin();
+        };
+        audio.onended = finConTope;
+        audio.onerror = () => finConTope();
+        void audio.play().then(() => {
+          anuncioUnlockRef.current = true;
+        }).catch(() => {
+          window.setTimeout(() => {
+            void audio.play().catch(() => finConTope());
+          }, 120);
+        });
       } catch {
+        anuncioReproduciendoRef.current = false;
         resolve();
       }
     });
-  }, []);
+  }, [asegurarAudioAnuncio]);
 
   const reiniciarTimerMinutos = useCallback(() => {
     if (anuncioMinutosTimerRef.current) {
@@ -326,6 +382,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       if (!sesionActivaRef.current) return;
       if (!anuncioConfigRef.current.activo) return;
       if (anuncioConfigRef.current.modo !== "minutos") return;
+      if (anuncioReproduciendoRef.current) return;
       void reproducirAnuncio();
     }, ms);
   }, [reproducirAnuncio]);
@@ -336,21 +393,25 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       reiniciarTimerMinutos();
     };
     const onPlayNow = () => {
+      desbloquearAudioAnuncio();
       void reproducirAnuncio();
     };
+    const onPointer = () => desbloquearAudioAnuncio();
     window.addEventListener(ANUNCIO_CONFIG_EVENT, syncConfig);
     window.addEventListener("storage", syncConfig);
     window.addEventListener(ANUNCIO_PLAY_NOW_EVENT, onPlayNow);
+    window.addEventListener("pointerdown", onPointer);
     syncConfig();
     return () => {
       window.removeEventListener(ANUNCIO_CONFIG_EVENT, syncConfig);
       window.removeEventListener("storage", syncConfig);
       window.removeEventListener(ANUNCIO_PLAY_NOW_EVENT, onPlayNow);
+      window.removeEventListener("pointerdown", onPointer);
       if (anuncioMinutosTimerRef.current) {
         window.clearInterval(anuncioMinutosTimerRef.current);
       }
     };
-  }, [reproducirAnuncio, reiniciarTimerMinutos]);
+  }, [reproducirAnuncio, reiniciarTimerMinutos, desbloquearAudioAnuncio]);
 
   const iniciarCancion = useCallback(async (cancion: ColaItem) => {
     if (procesandoRef.current) return;
@@ -496,13 +557,14 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     onPlayingChange?.(playing);
   }, [onPlayingChange, agregarAlPool, clearRadioWatchdog]);
 
-  const { ready, play, resume, setVolume, getVolume } = useYouTubePlayer(
+  const { ready, play, resume, pause, setVolume, getVolume } = useYouTubePlayer(
     onEnded,
     onError,
     handlePlayingChange,
   );
   playRef.current = play;
   resumeRef.current = resume;
+  pauseRef.current = pause;
   setVolumeRef.current = setVolume;
   getVolumeRef.current = getVolume;
 
@@ -584,6 +646,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const acabaDeAbrir = !visibleAntesRef.current;
     visibleAntesRef.current = true;
     sesionActivaRef.current = true;
+    desbloquearAudioAnuncio();
     reiniciarTimerMinutos();
 
     if (!acabaDeAbrir) {
@@ -605,14 +668,17 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         resumeRef.current();
       }
     })();
-  }, [visible, ready, iniciarRelleno, cargarPoolRadio, reiniciarTimerMinutos]);
+  }, [visible, ready, iniciarRelleno, cargarPoolRadio, reiniciarTimerMinutos, desbloquearAudioAnuncio]);
 
   const proximas = cola.filter((c) => c.estado === "pendiente");
 
   const saltar = async () => {
     cancelarVozRef.current();
-    anuncioAudioRef.current?.pause();
-    anuncioAudioRef.current = null;
+    if (anuncioAudioRef.current) {
+      anuncioAudioRef.current.pause();
+      anuncioAudioRef.current.currentTime = 0;
+    }
+    anuncioReproduciendoRef.current = false;
     setMostrarSaludo(false);
     saludoFinalPendienteRef.current = false;
     pausaUsuarioRef.current = false;

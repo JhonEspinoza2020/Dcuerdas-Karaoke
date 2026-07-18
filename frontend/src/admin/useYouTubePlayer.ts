@@ -111,11 +111,15 @@ export function useYouTubePlayer(
     playerRef.current?.playVideo?.();
   };
 
+  const pause = () => {
+    playerRef.current?.pauseVideo?.();
+  };
+
   const setVolume = (vol: number) => {
     playerRef.current?.setVolume?.(Math.max(0, Math.min(100, vol)));
   };
 
   const getVolume = () => playerRef.current?.getVolume?.() ?? 100;
 
-  return { ready, play, resume, setVolume, getVolume };
+  return { ready, play, resume, pause, setVolume, getVolume };
 }
