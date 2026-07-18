@@ -42,6 +42,8 @@ export type BusquedaYoutubeResult = {
 export async function ejecutarBusquedaYoutube(opts: {
   q: string;
   mesaId?: number;
+  /** Admin: no se bloquea por el cupo diario de la app (sigue contando uso). */
+  esAdmin?: boolean;
   marcarMesaApi?: (mesaId: number) => Promise<void>;
 }): Promise<BusquedaYoutubeResult> {
   const termino = normalizarTerminoBusqueda(String(opts.q), "musica");
@@ -72,7 +74,7 @@ export async function ejecutarBusquedaYoutube(opts: {
   }
 
   const cuota = await cuotaDisponible();
-  if (!cuota.ok) {
+  if (!cuota.ok && !opts.esAdmin) {
     if (aprox.length > 0) {
       const resultados = ordenarPreferenciaSuave(
         await filtrarReproduciblesCompleto(aprox, apiKey),

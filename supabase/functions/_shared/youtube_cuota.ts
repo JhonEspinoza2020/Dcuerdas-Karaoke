@@ -2,8 +2,8 @@ import { createServiceClient } from "./supabase.ts";
 
 /** Máximo de search.list por día (Lima). Ajusta con secret YOUTUBE_MAX_BUSQUEDAS_DIA. */
 export function maxBusquedasDia(): number {
-  const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? "50");
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 50;
+  const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? "90");
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 90;
 }
 
 /** Segundos mínimos entre dos search.list de la misma mesa. */

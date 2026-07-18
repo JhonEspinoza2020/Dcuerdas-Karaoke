@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
       "youtube_buscar",
       ADMIN_BUSQUEDAS_POR_MIN,
     );
-    const res = await ejecutarBusquedaYoutube({ q });
+    const res = await ejecutarBusquedaYoutube({ q, esAdmin: true });
     return jsonResponse(res);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";
