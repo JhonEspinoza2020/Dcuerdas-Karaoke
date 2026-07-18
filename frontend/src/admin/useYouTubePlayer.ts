@@ -24,6 +24,26 @@ function waitForYT(): Promise<YT> {
   });
 }
 
+function manejarEstadoPlayer(
+  YT: YT,
+  data: number,
+  onEnded: OnEnded,
+  onPlayingChange?: OnPlayingChange,
+) {
+  if (data === YT.PlayerState.ENDED) {
+    onPlayingChange?.(false);
+    onEnded();
+    return;
+  }
+  if (data === YT.PlayerState.PAUSED) {
+    onPlayingChange?.(false);
+    return;
+  }
+  if (data === YT.PlayerState.PLAYING || data === YT.PlayerState.BUFFERING) {
+    onPlayingChange?.(true);
+  }
+}
+
 export function useYouTubePlayer(
   onEnded: OnEnded,
   onError?: OnError,
@@ -62,18 +82,12 @@ export function useYouTubePlayer(
             if (!destroyed) setReady(true);
           },
           onStateChange: (e) => {
-            if (e.data === YT.PlayerState.ENDED) {
-              onPlayingChangeRef.current?.(false);
-              onEndedRef.current();
-              return;
-            }
-            if (e.data === YT.PlayerState.PAUSED) {
-              onPlayingChangeRef.current?.(false);
-              return;
-            }
-            if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING) {
-              onPlayingChangeRef.current?.(true);
-            }
+            manejarEstadoPlayer(
+              YT,
+              e.data,
+              () => onEndedRef.current(),
+              onPlayingChangeRef.current,
+            );
           },
           onError: (e) => {
             onPlayingChangeRef.current?.(false);

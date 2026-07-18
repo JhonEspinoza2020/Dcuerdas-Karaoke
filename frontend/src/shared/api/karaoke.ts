@@ -1,8 +1,8 @@
 /**
  * Cliente API — D'cuerdas Karaoke (Supabase Edge Functions)
  */
-const BASE = import.meta.env.VITE_SUPABASE_URL as string;
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const BASE = import.meta.env.VITE_SUPABASE_URL ?? "";
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 const FN = (name: string) => `${BASE}/functions/v1/${name}`;
 
 async function post<T>(name: string, body?: unknown, headers?: Record<string, string>): Promise<T> {

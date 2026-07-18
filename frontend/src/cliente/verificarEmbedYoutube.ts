@@ -23,6 +23,20 @@ function ensureYtApi(): Promise<NonNullable<Window["YT"]>> {
   });
 }
 
+function crearHostCheck(): { host: HTMLDivElement; elId: string } {
+  const host = document.createElement("div");
+  const elId = `yt-check-${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+  host.id = elId;
+  host.style.cssText =
+    "position:fixed;left:-9999px;top:0;width:120px;height:80px;opacity:0;pointer-events:none;";
+  document.body.appendChild(host);
+  return { host, elId };
+}
+
+function esEstadoReproduciendo(YT: NonNullable<Window["YT"]>, st: number | undefined): boolean {
+  return st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING;
+}
+
 /**
  * @returns true si el video llega a reproducirse embebido en este origen.
  */
@@ -31,12 +45,7 @@ export async function verificarEmbedYoutube(videoId: string, timeoutMs = 7000): 
   if (id.length < 6) return false;
 
   const YT = await ensureYtApi();
-  const host = document.createElement("div");
-  const elId = `yt-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  host.id = elId;
-  host.style.cssText =
-    "position:fixed;left:-9999px;top:0;width:120px;height:80px;opacity:0;pointer-events:none;";
-  document.body.appendChild(host);
+  const { host, elId } = crearHostCheck();
 
   return new Promise<boolean>((resolve) => {
     let done = false;
@@ -82,9 +91,7 @@ export async function verificarEmbedYoutube(videoId: string, timeoutMs = 7000): 
           }
         },
         onStateChange: (e) => {
-          if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING) {
-            finish(true);
-          }
+          if (esEstadoReproduciendo(YT, e.data)) finish(true);
         },
         onError: () => finish(false),
       },
@@ -92,10 +99,7 @@ export async function verificarEmbedYoutube(videoId: string, timeoutMs = 7000): 
 
     poll = window.setInterval(() => {
       try {
-        const st = player?.getPlayerState?.();
-        if (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING) {
-          finish(true);
-        }
+        if (esEstadoReproduciendo(YT, player?.getPlayerState?.())) finish(true);
       } catch {
         /* ignore */
       }

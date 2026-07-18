@@ -23,10 +23,23 @@ function decodeHtml(texto: string): string {
   return area.value;
 }
 
+function textoIdleAmbiente(poolVersion: number, poolSize: number): string {
+  if (poolVersion === 0) return "Cargando ambiente…";
+  if (poolSize === 0) return "Sin canciones enviadas aún.";
+  return `Ambiente: ${poolSize} canciones.`;
+}
+
 /** Ambiente = canciones ENVIADAS (BD). YouTube a veces bloquea embed → saltamos a otra. */
 const ERROR_GRACE_MS = 0;
 const RADIO_WATCHDOG_MS = 3000;
 const COLA_WATCHDOG_MS = 4500;
+
+function aleatorioEntero(maxExclusivo: number): number {
+  if (maxExclusivo <= 1) return 0;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0] % maxExclusivo;
+}
 
 function elegirAlAzar(
   pool: string[],
@@ -41,7 +54,7 @@ function elegirAlAzar(
       ? libres.filter((id) => preferidas.has(id))
       : [];
   const candidatos = buenos.length > 0 ? buenos : libres;
-  return candidatos[Math.floor(Math.random() * candidatos.length)];
+  return candidatos[aleatorioEntero(candidatos.length)];
 }
 
 export function Reproductor({ accessToken, visible = true, onPlayingChange }: Props) {
@@ -773,13 +786,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             <BrandLogo size="hero" className="idle-logo" />
             <p className="lema">{es.marca.lema}</p>
             {error ? null : (
-              <p className="idle-hint">
-                {poolVersion === 0
-                  ? "Cargando ambiente…"
-                  : poolSize === 0
-                    ? "Sin canciones enviadas aún."
-                    : `Ambiente: ${poolSize} canciones.`}
-              </p>
+              <p className="idle-hint">{textoIdleAmbiente(poolVersion, poolSize)}</p>
             )}
           </div>
         )}

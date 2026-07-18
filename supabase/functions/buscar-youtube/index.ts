@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
       return errorResponse("youtube_no_configurado", "La búsqueda estará disponible pronto.", 503);
     }
 
-    const res = await fetchYoutubeConRotacion((key) => {
+    const { response: res, keyId } = await fetchYoutubeConRotacion((key) => {
       const params = new URLSearchParams({
         part: "snippet",
         q: termino,
@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
       return errorResponse("youtube_error", "YouTube rechazó la solicitud.", 502);
     }
 
-    await registrarBusquedaApi();
+    await registrarBusquedaApi(keyId);
     await marcarApiMesa(mesa.id);
 
     const data = await res.json();

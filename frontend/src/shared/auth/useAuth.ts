@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, type Perfil } from "../supabase/client";
 
-const BASE = import.meta.env.VITE_SUPABASE_URL as string;
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const BASE = import.meta.env.VITE_SUPABASE_URL ?? "";
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 
 export type AuthState = {
   user: User | null;

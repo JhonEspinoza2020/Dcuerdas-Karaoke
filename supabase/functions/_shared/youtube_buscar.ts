@@ -97,7 +97,7 @@ export async function ejecutarBusquedaYoutube(opts: {
 
   if (youtubeKeysCount() === 0) throw new Error("youtube_no_configurado");
 
-  const res = await fetchYoutubeConRotacion((key) => {
+  const { response: res, keyId } = await fetchYoutubeConRotacion((key) => {
     const params = new URLSearchParams({
       part: "snippet",
       q: termino,
@@ -127,7 +127,7 @@ export async function ejecutarBusquedaYoutube(opts: {
     throw new Error("youtube_error");
   }
 
-  await registrarBusquedaApi();
+  await registrarBusquedaApi(keyId);
   if (opts.mesaId != null && opts.marcarMesaApi) {
     await opts.marcarMesaApi(opts.mesaId);
   }

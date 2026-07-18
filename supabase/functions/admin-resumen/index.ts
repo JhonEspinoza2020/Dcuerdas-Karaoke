@@ -1,8 +1,13 @@
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { verifyAdminAuth } from "../_shared/auth.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
-import { inicioJornadaActualIso, claveJornadaDesdeIso } from "../_shared/horario.ts";
+import {
+  claveJornadaActual,
+  claveJornadaDesdeIso,
+  rangoJornadaPorClave,
+} from "../_shared/horario.ts";
 import { AgrupadorPersonas, normalizarNombre } from "../_shared/nombres.ts";
+import { cuotaDisponible } from "../_shared/youtube_cuota.ts";
 
 function hace30Dias(): string {
   const d = new Date();
@@ -26,19 +31,24 @@ Deno.serve(async (req) => {
   try {
     await verifyAdminAuth(req);
     const supabase = createServiceClient();
-    const inicioHoy = inicioJornadaActualIso();
+    const url = new URL(req.url);
+    const fechaParam = (url.searchParams.get("fecha") ?? "").trim();
+    const claveJornada = fechaParam || claveJornadaActual();
+    const { inicioIso, finIso } = rangoJornadaPorClave(claveJornada);
     const hace30 = hace30Dias();
 
     const [
-      visitasHoyRes,
+      visitasJornadaRes,
       colaRes,
       pedidosRes,
       visitasRes,
+      cuotaYt,
     ] = await Promise.all([
       supabase
         .from("visitas_clientes")
         .select("id, nombre_cliente, nombre_norm, mesa_id, creado_en, user_id, mesas(numero_mesa, etiqueta, tipo)")
-        .gte("creado_en", inicioHoy)
+        .gte("creado_en", inicioIso)
+        .lt("creado_en", finIso)
         .order("creado_en", { ascending: false }),
       supabase
         .from("cola_reproduccion")
@@ -52,9 +62,10 @@ Deno.serve(async (req) => {
         .from("visitas_clientes")
         .select("nombre_cliente, nombre_norm, mesa_id, creado_en, user_id, mesas(numero_mesa, etiqueta, tipo)")
         .order("creado_en", { ascending: false }),
+      cuotaDisponible(),
     ]);
 
-    if (visitasHoyRes.error) throw visitasHoyRes.error;
+    if (visitasJornadaRes.error) throw visitasJornadaRes.error;
     if (colaRes.error) throw colaRes.error;
     if (pedidosRes.error) throw pedidosRes.error;
     if (visitasRes.error) throw visitasRes.error;
@@ -62,7 +73,6 @@ Deno.serve(async (req) => {
     const todasVisitas = (visitasRes.data ?? []) as VisitaRow[];
     const agrupador = new AgrupadorPersonas();
 
-    // Primera pasada: registrar identidades (user_id + nombres parecidos).
     for (const v of todasVisitas) {
       const norm = normalizarNombre(v.nombre_cliente) || v.nombre_norm;
       agrupador.registrar(norm, v.user_id);
@@ -77,7 +87,7 @@ Deno.serve(async (req) => {
       jornadas: Set<string>;
       jornadasMes: Set<string>;
       mesas: Map<number, { count: number; etiqueta: string }>;
-      tuvoAntesDeHoy: boolean;
+      tuvoAntesDeJornada: boolean;
     };
 
     const mapa = new Map<string, Agg>();
@@ -106,7 +116,7 @@ Deno.serve(async (req) => {
           jornadas,
           jornadasMes,
           mesas,
-          tuvoAntesDeHoy: creado < inicioHoy,
+          tuvoAntesDeJornada: creado < inicioIso,
         });
       } else {
         if (v.nombre_cliente.length > prev.nombre.length) prev.nombre = v.nombre_cliente;
@@ -118,7 +128,7 @@ Deno.serve(async (req) => {
         }
         if (creado > prev.ultima_visita) prev.ultima_visita = creado;
         if (creado < prev.primera_visita) prev.primera_visita = creado;
-        if (creado < inicioHoy) prev.tuvoAntesDeHoy = true;
+        if (creado < inicioIso) prev.tuvoAntesDeJornada = true;
         const m = prev.mesas.get(v.mesa_id);
         if (m) m.count += 1;
         else prev.mesas.set(v.mesa_id, { count: 1, etiqueta });
@@ -148,7 +158,6 @@ Deno.serve(async (req) => {
         };
       });
 
-    // Una fila por persona en la jornada (no una por mesa).
     const llegadasPorPersona = new Map<string, {
       nombre: string;
       zona: string;
@@ -157,14 +166,14 @@ Deno.serve(async (req) => {
       total_visitas: number;
     }>();
 
-    for (const v of (visitasHoyRes.data ?? []) as VisitaRow[]) {
+    for (const v of (visitasJornadaRes.data ?? []) as VisitaRow[]) {
       const mesa = v.mesas;
       const etiqueta = mesa?.etiqueta ?? (mesa?.tipo === "karaoke" ? "Box Karaoke" : `Mesa ${mesa?.numero_mesa}`);
       const norm = normalizarNombre(v.nombre_cliente) || v.nombre_norm;
       const key = agrupador.claveDe(norm, v.user_id);
       const agg = mapa.get(key);
       const total = agg?.total_noches ?? 1;
-      const esRecurrente = Boolean(agg?.tuvoAntesDeHoy) || total >= 2;
+      const esRecurrente = Boolean(agg?.tuvoAntesDeJornada) || total >= 2;
       const prev = llegadasPorPersona.get(key);
       if (!prev || v.creado_en > prev.hora) {
         llegadasPorPersona.set(key, {
@@ -181,23 +190,41 @@ Deno.serve(async (req) => {
       }
     }
 
-    const llegadasHoy = [...llegadasPorPersona.values()]
+    const llegadas = [...llegadasPorPersona.values()]
       .sort((a, b) => b.hora.localeCompare(a.hora));
+
+    const esHoy = claveJornada === claveJornadaActual();
 
     return jsonResponse({
       stats: {
-        visitas_hoy: (visitasHoyRes.data ?? []).length,
-        clientes_hoy: llegadasHoy.length,
+        visitas_hoy: (visitasJornadaRes.data ?? []).length,
+        clientes_hoy: llegadas.length,
         cola_activa: colaRes.count ?? 0,
         pedidos_pendientes: pedidosRes.count ?? 0,
         clientes_frecuentes: frecuentes.length,
+        youtube_usadas: cuotaYt.usadas,
+        youtube_max: cuotaYt.max,
       },
-      llegadas_hoy: llegadasHoy,
+      jornada: {
+        clave: claveJornada,
+        es_hoy: esHoy,
+        inicio: inicioIso,
+        fin: finIso,
+      },
+      youtube_busquedas: {
+        usadas: cuotaYt.usadas,
+        max: cuotaYt.max,
+        restantes: Math.max(0, cuotaYt.max - cuotaYt.usadas),
+      },
+      llegadas_hoy: llegadas,
       frecuentes,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";
     if (msg === "admin_no_autorizado") return errorResponse(msg, "No autorizado.", 403);
+    if (msg === "fecha_invalida") {
+      return errorResponse(msg, "Fecha inválida. Usa YYYY-MM-DD.", 400);
+    }
     return errorResponse("error", "Error al obtener resumen.", 500);
   }
 });

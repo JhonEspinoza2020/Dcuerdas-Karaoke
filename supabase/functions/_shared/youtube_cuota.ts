@@ -1,5 +1,15 @@
 import { createServiceClient } from "./supabase.ts";
-import { youtubeKeysCount } from "./youtube_keys.ts";
+
+function contarKeysConfiguradas(): number {
+  const raw = [Deno.env.get("YOUTUBE_API_KEYS"), Deno.env.get("YOUTUBE_API_KEY")]
+    .filter(Boolean)
+    .join(",");
+  const seen = new Set<string>();
+  for (const k of raw.split(/[,;\n]+/).map((x) => x.trim()).filter((x) => x.length > 20)) {
+    seen.add(k);
+  }
+  return seen.size;
+}
 
 /**
  * Tope de search.list por día (Lima) a nivel app.
@@ -7,9 +17,18 @@ import { youtubeKeysCount } from "./youtube_keys.ts";
  * Override: secret YOUTUBE_MAX_BUSQUEDAS_DIA.
  */
 export function maxBusquedasDia(): number {
-  const auto = Math.max(90, youtubeKeysCount() * 100);
+  const auto = Math.max(90, contarKeysConfiguradas() * 100);
   const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? String(auto));
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : auto;
+}
+
+/**
+ * Soft-limit por key: al llegar aquí dejamos de usar esa key y rotamos.
+ * Google suele cortar cerca de 100 search.list; 99 evita el 403.
+ */
+export function softLimitPorKey(): number {
+  const n = Number(Deno.env.get("YOUTUBE_SOFT_LIMIT_POR_KEY") ?? "99");
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 99;
 }
 
 /** Segundos mínimos entre dos search.list de la misma mesa. */
@@ -20,6 +39,34 @@ export function cooldownMesaSeg(): number {
 
 function diaLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+}
+
+/** Fingerprint estable de la API key (no guardamos la key completa). */
+export function fingerprintApiKey(apiKey: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < apiKey.length; i++) {
+    h ^= apiKey.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `k${(h >>> 0).toString(16)}`;
+}
+
+export async function leerUsosPorClave(): Promise<Record<string, number>> {
+  const supabase = createServiceClient();
+  const dia = diaLima();
+  const { data } = await supabase
+    .from("youtube_cuota_dia")
+    .select("por_clave")
+    .eq("dia", dia)
+    .maybeSingle();
+  const raw = data?.por_clave;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) out[k] = Math.floor(n);
+  }
+  return out;
 }
 
 export async function cuotaDisponible(): Promise<{ ok: boolean; usadas: number; max: number }> {
@@ -35,20 +82,55 @@ export async function cuotaDisponible(): Promise<{ ok: boolean; usadas: number; 
   return { ok: usadas < max, usadas, max };
 }
 
-export async function registrarBusquedaApi(): Promise<void> {
+/**
+ * Suma 1 al total del día y, si hay fingerprint, a esa API key.
+ * Si `forzarUsos` se pasa, fija el contador de esa key (p. ej. marcar agotada).
+ */
+export async function registrarBusquedaApi(
+  keyFingerprint?: string | null,
+  opts?: { forzarUsosClave?: number },
+): Promise<void> {
   const supabase = createServiceClient();
   const dia = diaLima();
   const { data } = await supabase
     .from("youtube_cuota_dia")
-    .select("busquedas_api")
+    .select("busquedas_api, por_clave")
     .eq("dia", dia)
     .maybeSingle();
-  const usadas = (data?.busquedas_api ?? 0) + 1;
+
+  const usadas = (data?.busquedas_api ?? 0) + (opts?.forzarUsosClave != null ? 0 : 1);
+  const porClave: Record<string, number> = {};
+  const prev = data?.por_clave;
+  if (prev && typeof prev === "object" && !Array.isArray(prev)) {
+    for (const [k, v] of Object.entries(prev as Record<string, unknown>)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) porClave[k] = Math.floor(n);
+    }
+  }
+
+  if (keyFingerprint) {
+    if (opts?.forzarUsosClave != null) {
+      porClave[keyFingerprint] = Math.max(
+        porClave[keyFingerprint] ?? 0,
+        Math.floor(opts.forzarUsosClave),
+      );
+    } else {
+      porClave[keyFingerprint] = (porClave[keyFingerprint] ?? 0) + 1;
+    }
+  }
+
   await supabase.from("youtube_cuota_dia").upsert({
     dia,
-    busquedas_api: usadas,
+    busquedas_api: opts?.forzarUsosClave != null ? (data?.busquedas_api ?? 0) : usadas,
+    por_clave: porClave,
     actualizado_en: new Date().toISOString(),
   });
+}
+
+/** Marca una key como agotada (soft) para no volver a usarla hoy. */
+export async function marcarClaveAgotada(apiKey: string): Promise<void> {
+  const fp = fingerprintApiKey(apiKey);
+  await registrarBusquedaApi(fp, { forzarUsosClave: softLimitPorKey() });
 }
 
 /** true = esta mesa puede gastar API ahora. */

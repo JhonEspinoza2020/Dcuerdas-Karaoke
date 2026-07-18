@@ -1,8 +1,8 @@
 /**
  * API del panel admin — D'cuerdas
  */
-const BASE = import.meta.env.VITE_SUPABASE_URL as string;
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const BASE = import.meta.env.VITE_SUPABASE_URL ?? "";
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 const FN = (name: string) => `${BASE}/functions/v1/${name}`;
 
 export type AdminStats = {
@@ -11,6 +11,8 @@ export type AdminStats = {
   cola_activa: number;
   pedidos_pendientes: number;
   clientes_frecuentes: number;
+  youtube_usadas?: number;
+  youtube_max?: number;
 };
 
 export type LlegadaHoy = {
@@ -34,6 +36,17 @@ export type AdminResumen = {
   stats: AdminStats;
   llegadas_hoy: LlegadaHoy[];
   frecuentes: ClienteFrecuente[];
+  jornada?: {
+    clave: string;
+    es_hoy: boolean;
+    inicio: string;
+    fin: string;
+  };
+  youtube_busquedas?: {
+    usadas: number;
+    max: number;
+    restantes: number;
+  };
 };
 
 export type PedidoItem = {
@@ -107,8 +120,10 @@ async function adminJson<T>(accessToken: string, path: string, init?: RequestIni
 }
 
 export const adminApi = {
-  resumen: (accessToken: string) =>
-    adminJson<AdminResumen>(accessToken, FN("admin-resumen")),
+  resumen: (accessToken: string, fecha?: string) => {
+    const qs = fecha ? `?fecha=${encodeURIComponent(fecha)}` : "";
+    return adminJson<AdminResumen>(accessToken, FN("admin-resumen") + qs);
+  },
 
   pedidos: (accessToken: string, query?: PedidosQuery) => {
     const params = new URLSearchParams();

@@ -9,11 +9,12 @@ function urlQrImagen(url: string, size = 220) {
 }
 
 function nombreArchivoQr(q: QR): string {
-  const nombre = (q.etiqueta ?? `mesa-${q.numero_mesa}`)
+  const fallback = `mesa-${q.numero_mesa}`;
+  const nombre = (q.etiqueta ?? fallback)
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
-  return `${nombre || `mesa-${q.numero_mesa}`}-qr.png`;
+  return `${nombre || fallback}-qr.png`;
 }
 
 async function descargarQr(q: QR): Promise<void> {
@@ -49,7 +50,7 @@ export function QRsPanel({ accessToken }: Props) {
     try {
       await descargarQr(q);
     } catch {
-      setError(`No se pudo descargar el QR de ${q.etiqueta ?? `Mesa ${q.numero_mesa}`}.`);
+      setError(`No se pudo descargar el QR de ${q.etiqueta ?? ("Mesa " + q.numero_mesa)}.`);
     } finally {
       setDescargando(null);
     }

@@ -49,6 +49,39 @@ type ExitoState = {
   antesDeTi: number;
 };
 
+function textoBotonEnviar(
+  loading: boolean,
+  saludo: string,
+  t: typeof es.musica,
+): string {
+  if (loading) return "Comprobando video…";
+  if (saludo.trim()) return t.enviar;
+  return t.enviarSinSaludo;
+}
+
+function errorPreEncolar(
+  limiteCola: LimiteCola | null,
+  saludo: string,
+  numeroMesa: number,
+  nombre: string,
+  t: typeof es.musica,
+): string | null {
+  if (limiteCola && !limiteCola.puede_encolar) return mensajeLimiteUi(limiteCola, t);
+  const checkSaludo = validarSaludo(saludo);
+  if (!checkSaludo.ok) return checkSaludo.error;
+  const esperaEnvio = msRestantesRateLimit(`encolar-${numeroMesa}-${nombre}`, COOLDOWNS.encolarMs);
+  if (esperaEnvio > 0) {
+    return `Espera ${formatearEspera(esperaEnvio)} antes de enviar otra canción.`;
+  }
+  if (checkSaludo.valor) {
+    const esperaSaludo = msRestantesRateLimit(`saludo-${numeroMesa}-${nombre}`, COOLDOWNS.saludoMs);
+    if (esperaSaludo > 0) {
+      return `Ya enviaste un saludo hace poco. Espera ${formatearEspera(esperaSaludo)}.`;
+    }
+  }
+  return null;
+}
+
 export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Props) {
   const t = es.musica;
   const AccionIcon = MusicIcon;
@@ -224,8 +257,9 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const encolar = useCallback(async () => {
     if (!seleccionado) return;
 
-    if (limiteCola && !limiteCola.puede_encolar) {
-      setError(mensajeLimiteUi(limiteCola, t));
+    const bloqueo = errorPreEncolar(limiteCola, saludo, numeroMesa, nombre, t);
+    if (bloqueo) {
+      setError(bloqueo);
       return;
     }
 
@@ -233,20 +267,6 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
     if (!checkSaludo.ok) {
       setError(checkSaludo.error);
       return;
-    }
-
-    const esperaEnvio = msRestantesRateLimit(`encolar-${numeroMesa}-${nombre}`, COOLDOWNS.encolarMs);
-    if (esperaEnvio > 0) {
-      setError(`Espera ${formatearEspera(esperaEnvio)} antes de enviar otra canción.`);
-      return;
-    }
-
-    if (checkSaludo.valor) {
-      const esperaSaludo = msRestantesRateLimit(`saludo-${numeroMesa}-${nombre}`, COOLDOWNS.saludoMs);
-      if (esperaSaludo > 0) {
-        setError(`Ya enviaste un saludo hace poco. Espera ${formatearEspera(esperaSaludo)}.`);
-        return;
-      }
     }
 
     setLoading(true);
@@ -514,9 +534,7 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
 
               <button className="btn-primary" onClick={encolar} disabled={loading}>
                 <AccionIcon size={18} />
-                {loading
-                  ? "Comprobando video…"
-                  : (saludo.trim() ? t.enviar : t.enviarSinSaludo)}
+                {textoBotonEnviar(loading, saludo, t)}
               </button>
             </div>
           )}

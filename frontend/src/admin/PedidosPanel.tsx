@@ -63,8 +63,16 @@ function formatearMonto(n: number): string {
 }
 
 function etiquetaAccion(base: string, subtotal: number): string {
-  const monto = formatearMonto(subtotal);
-  return monto ? `${base} · ${monto}` : base;
+  if (subtotal <= 0) return base;
+  return `${base} · S/ ${subtotal.toFixed(2)}`;
+}
+
+function textoBotonPedido(
+  col: (typeof COLUMNAS)[number],
+  subtotal: number,
+): string {
+  if (col.siguiente === "entregado") return etiquetaAccion(col.accion, subtotal);
+  return col.accion;
 }
 
 export function PedidosPanel({ accessToken, onActiveCountChange }: Props) {
@@ -180,8 +188,9 @@ export function PedidosPanel({ accessToken, onActiveCountChange }: Props) {
   if (totalActivos === 1) subtitulo = "1 activo · más antiguos primero";
   else if (totalActivos > 1) subtitulo = `${totalActivos} activos · más antiguos primero`;
 
-  const etiquetaFiltro =
-    filtro === "hoy" ? "hoy" : filtro === "rango" ? "en el rango" : "esta jornada";
+  let etiquetaFiltro = "esta jornada";
+  if (filtro === "hoy") etiquetaFiltro = "hoy";
+  else if (filtro === "rango") etiquetaFiltro = "en el rango";
 
   const cambiarEstado = async (id: number, estado: PedidoAdmin["estado"]) => {
     const previa = pedidos;
@@ -276,9 +285,7 @@ export function PedidosPanel({ accessToken, onActiveCountChange }: Props) {
                                 >
                                   {actualizando === p.id
                                     ? "…"
-                                    : col.siguiente === "entregado"
-                                      ? etiquetaAccion(col.accion, sub)
-                                      : col.accion}
+                                    : textoBotonPedido(col, sub)}
                                 </button>
                               )}
                               <button

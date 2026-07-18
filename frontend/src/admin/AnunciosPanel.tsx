@@ -9,10 +9,31 @@ import {
 
 type Props = { readonly accessToken: string };
 
+function plural(n: number, uno: string, varios: string) {
+  return n === 1 ? uno : varios;
+}
+
+function textoEstadoAnuncio(cfg: AnuncioConfig): string {
+  if (!cfg.activo) return "desactivado";
+  if (cfg.modo === "canciones") {
+    return `cada ${cfg.cadaCanciones} ${plural(cfg.cadaCanciones, "canción", "canciones")}`;
+  }
+  return `cada ${cfg.cadaMinutos} ${plural(cfg.cadaMinutos, "minuto", "minutos")}`;
+}
+
+function parseRango(raw: string, min: number, max: number, fallback: number): number {
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
 export function AnunciosPanel({ accessToken: _accessToken }: Props) {
   const [cfg, setCfg] = useState<AnuncioConfig>(() => leerAnuncioConfig());
   const [ok, setOk] = useState("");
   const [probando, setProbando] = useState(false);
+  /** Texto libre mientras escribe; se valida al blur / Guardar. */
+  const [textoCanciones, setTextoCanciones] = useState(() => String(leerAnuncioConfig().cadaCanciones));
+  const [textoMinutos, setTextoMinutos] = useState(() => String(leerAnuncioConfig().cadaMinutos));
 
   useEffect(() => {
     if (!ok) return;
@@ -23,11 +44,25 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
   const guardar = (next: AnuncioConfig) => {
     const limpia = guardarAnuncioConfig(next);
     setCfg(limpia);
+    setTextoCanciones(String(limpia.cadaCanciones));
+    setTextoMinutos(String(limpia.cadaMinutos));
     setOk("Configuración guardada");
   };
 
   const setModo = (modo: AnuncioModo) => {
     guardar({ ...cfg, modo });
+  };
+
+  const confirmarCanciones = () => {
+    const cadaCanciones = parseRango(textoCanciones, 1, 10, cfg.cadaCanciones);
+    setTextoCanciones(String(cadaCanciones));
+    if (cadaCanciones !== cfg.cadaCanciones) guardar({ ...cfg, cadaCanciones });
+  };
+
+  const confirmarMinutos = () => {
+    const cadaMinutos = parseRango(textoMinutos, 1, 15, cfg.cadaMinutos);
+    setTextoMinutos(String(cadaMinutos));
+    if (cadaMinutos !== cfg.cadaMinutos) guardar({ ...cfg, cadaMinutos });
   };
 
   const sonarAhora = () => {
@@ -68,11 +103,7 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
         <p className="anuncio-help">
           El anuncio (<code>anuncio.mp3</code>) suena en el <strong>Reproductor</strong>
           (abre esa pestaña al menos una vez). Aplica a cola y radio ambiente.
-          Hoy: {cfg.activo
-            ? cfg.modo === "canciones"
-              ? `cada ${cfg.cadaCanciones} canción${cfg.cadaCanciones === 1 ? "" : "es"}`
-              : `cada ${cfg.cadaMinutos} minuto${cfg.cadaMinutos === 1 ? "" : "s"}`
-            : "desactivado"}.
+          Hoy: {textoEstadoAnuncio(cfg)}.
         </p>
 
         <div className="anuncio-modo-grid">
@@ -101,15 +132,10 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
               type="number"
               min={1}
               max={10}
-              value={cfg.cadaCanciones}
-              onChange={(e) => {
-                const cadaCanciones = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                setCfg((c) => ({ ...c, cadaCanciones }));
-              }}
-              onBlur={(e) => {
-                const cadaCanciones = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                guardar({ ...cfg, cadaCanciones });
-              }}
+              inputMode="numeric"
+              value={textoCanciones}
+              onChange={(e) => setTextoCanciones(e.target.value)}
+              onBlur={confirmarCanciones}
             />
           </label>
         ) : (
@@ -119,15 +145,10 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
               type="number"
               min={1}
               max={15}
-              value={cfg.cadaMinutos}
-              onChange={(e) => {
-                const cadaMinutos = Math.min(15, Math.max(1, Number(e.target.value) || 1));
-                setCfg((c) => ({ ...c, cadaMinutos }));
-              }}
-              onBlur={(e) => {
-                const cadaMinutos = Math.min(15, Math.max(1, Number(e.target.value) || 1));
-                guardar({ ...cfg, cadaMinutos });
-              }}
+              inputMode="numeric"
+              value={textoMinutos}
+              onChange={(e) => setTextoMinutos(e.target.value)}
+              onBlur={confirmarMinutos}
             />
           </label>
         )}
@@ -136,7 +157,11 @@ export function AnunciosPanel({ accessToken: _accessToken }: Props) {
           <button
             type="button"
             className="btn-primary"
-            onClick={() => guardar(cfg)}
+            onClick={() => {
+              const cadaCanciones = parseRango(textoCanciones, 1, 10, cfg.cadaCanciones);
+              const cadaMinutos = parseRango(textoMinutos, 1, 15, cfg.cadaMinutos);
+              guardar({ ...cfg, cadaCanciones, cadaMinutos });
+            }}
           >
             Guardar
           </button>

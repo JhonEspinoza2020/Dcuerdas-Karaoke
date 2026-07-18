@@ -47,6 +47,50 @@ export function claveJornadaDesdeIso(iso: string): string {
   return `${y}-${mo}-${d}`;
 }
 
+/** Clave de la jornada actual (YYYY-MM-DD del día de apertura). */
+export function claveJornadaActual(): string {
+  return claveJornadaDesdeIso(new Date().toISOString());
+}
+
+/** UTC ISO cuyo reloj de pared en Lima es yy-mm-dd hh:mn. */
+function limaWallToIso(yy: number, mm: number, dd: number, hh: number, mn: number): string {
+  let guess = Date.UTC(yy, mm - 1, dd, hh, mn, 0);
+  for (let i = 0; i < 3; i++) {
+    const limaWall = new Date(new Date(guess).toLocaleString("en-US", { timeZone: TIMEZONE }));
+    const want = Date.UTC(yy, mm - 1, dd, hh, mn, 0);
+    const have = Date.UTC(
+      limaWall.getFullYear(),
+      limaWall.getMonth(),
+      limaWall.getDate(),
+      limaWall.getHours(),
+      limaWall.getMinutes(),
+      0,
+    );
+    guess += want - have;
+  }
+  return new Date(guess).toISOString();
+}
+
+/**
+ * Rango ISO [inicio, fin) de una jornada por su clave YYYY-MM-DD (día de apertura en Lima).
+ * Ej: 2026-07-17 → 17:30 del 17 hasta 17:30 del 18 (Lima).
+ */
+export function rangoJornadaPorClave(clave: string): { inicioIso: string; finIso: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clave.trim());
+  if (!m) throw new Error("fecha_invalida");
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const [h, mi] = HORA_INICIO.split(":").map(Number);
+  const inicio = new Date(y, mo - 1, d);
+  const fin = new Date(inicio);
+  fin.setDate(fin.getDate() + 1);
+  return {
+    inicioIso: limaWallToIso(y, mo, d, h, mi),
+    finIso: limaWallToIso(fin.getFullYear(), fin.getMonth() + 1, fin.getDate(), h, mi),
+  };
+}
+
 export function karaokeEstaAbierto(): boolean {
   if (Deno.env.get("KARAOKE_IGNORAR_HORARIO") === "true") return true;
 

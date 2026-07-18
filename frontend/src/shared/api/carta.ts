@@ -29,7 +29,7 @@ export async function obtenerCarta(): Promise<CategoriaCarta[]> {
 
   return (data ?? []).map((cat: CategoriaCarta & { platos: Plato[] }) => ({
     ...cat,
-    platos: ((cat.platos as Plato[]) ?? [])
+    platos: (cat.platos ?? [])
       .filter((p) => p.disponible)
       .sort((a, b) => a.orden - b.orden),
   }));

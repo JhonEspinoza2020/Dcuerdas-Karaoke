@@ -3,7 +3,15 @@
  * Secrets:
  *   YOUTUBE_API_KEYS=key1,key2,key3
  *   YOUTUBE_API_KEY=key_legacy (opcional, fallback)
+ * Soft-limit por key (default 99): YOUTUBE_SOFT_LIMIT_POR_KEY
  */
+
+import {
+  fingerprintApiKey,
+  leerUsosPorClave,
+  marcarClaveAgotada,
+  softLimitPorKey,
+} from "./youtube_cuota.ts";
 
 function parseKeys(raw: string | undefined): string[] {
   if (!raw?.trim()) return [];
@@ -31,13 +39,19 @@ export function youtubeKeysCount(): number {
   return listYoutubeApiKeys().length;
 }
 
-/** Round-robin estable por minuto (Lima). */
-export function pickYoutubeApiKey(): string | null {
+/** Round-robin estable por minuto (Lima). Preferir keys bajo soft-limit. */
+export function pickYoutubeApiKey(usos?: Record<string, number>): string | null {
   const keys = listYoutubeApiKeys();
   if (keys.length === 0) return null;
   if (keys.length === 1) return keys[0];
+
+  const soft = softLimitPorKey();
+  const vivas = usos
+    ? keys.filter((k) => (usos[fingerprintApiKey(k)] ?? 0) < soft)
+    : keys;
+  const pool = vivas.length > 0 ? vivas : keys;
   const minuto = Math.floor(Date.now() / 60_000);
-  return keys[minuto % keys.length];
+  return pool[minuto % pool.length];
 }
 
 function esErrorCuota(status: number, body: string): boolean {
@@ -46,40 +60,58 @@ function esErrorCuota(status: number, body: string): boolean {
   const t = body.toLowerCase();
   return (
     t.includes("quota") ||
-    t.includes("dailyLimitExceeded") ||
     t.includes("dailylimitexceeded") ||
-    t.includes("rateLimitExceeded") ||
+    t.includes("dailyLimitExceeded".toLowerCase()) ||
     t.includes("ratelimitexceeded") ||
-    t.includes("userRateLimitExceeded")
+    t.includes("rateLimitExceeded".toLowerCase()) ||
+    t.includes("userratelimitexceeded") ||
+    t.includes("userRateLimitExceeded".toLowerCase())
   );
 }
 
+export type YoutubeFetchResult = {
+  response: Response;
+  /** Fingerprint de la key que respondió OK; null si ninguna. */
+  keyId: string | null;
+};
+
 /**
- * GET a YouTube Data API rotando keys si una se quedó sin cuota.
- * `buildUrl` recibe la key a usar.
+ * GET a YouTube rotando keys:
+ * 1) Prioriza keys con usos &lt; soft-limit (99) — no espera al 403 de Google.
+ * 2) Si una responde cuota, la marca agotada y prueba la siguiente.
  */
 export async function fetchYoutubeConRotacion(
   buildUrl: (apiKey: string) => string,
-): Promise<Response> {
+): Promise<YoutubeFetchResult> {
   const keys = listYoutubeApiKeys();
   if (keys.length === 0) {
     throw new Error("youtube_no_configurado");
   }
 
-  const start = Math.floor(Date.now() / 60_000) % keys.length;
+  const soft = softLimitPorKey();
+  const usos = await leerUsosPorClave();
+  const vivas = keys.filter((k) => (usos[fingerprintApiKey(k)] ?? 0) < soft);
+  const ordenBase = vivas.length > 0 ? vivas : keys;
+
+  const start = Math.floor(Date.now() / 60_000) % ordenBase.length;
   let last: Response | null = null;
 
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[(start + i) % keys.length];
+  for (let i = 0; i < ordenBase.length; i++) {
+    const key = ordenBase[(start + i) % ordenBase.length];
     const res = await fetch(buildUrl(key));
-    if (res.ok) return res;
+    if (res.ok) {
+      return { response: res, keyId: fingerprintApiKey(key) };
+    }
 
     const body = await res.text();
     last = new Response(body, { status: res.status, headers: res.headers });
 
-    if (esErrorCuota(res.status, body)) continue;
-    return last;
+    if (esErrorCuota(res.status, body)) {
+      await marcarClaveAgotada(key);
+      continue;
+    }
+    return { response: last, keyId: null };
   }
 
-  return last ?? new Response("{}", { status: 502 });
+  return { response: last ?? new Response("{}", { status: 502 }), keyId: null };
 }

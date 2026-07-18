@@ -76,8 +76,8 @@ export function ClientesPanel({ accessToken }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {llegadas.map((l, i) => (
-                  <tr key={`${l.nombre}-${i}`}>
+                {llegadas.map((l) => (
+                  <tr key={`${l.nombre}-${l.hora}-${l.zona}`}>
                     <td><strong>{l.nombre}</strong></td>
                     <td>{l.zona}</td>
                     <td>{new Date(l.hora).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</td>

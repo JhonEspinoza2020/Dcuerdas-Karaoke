@@ -54,7 +54,7 @@ function colapsarEspacios(texto: string): string {
 
 /** Quita caracteres de control y limita longitud mientras escribe. */
 export function sanitizarInput(texto: string, max: number): string {
-  return texto.replace(/[\u0000-\u001F\u007F]/g, "").slice(0, max);
+  return texto.replace(/\p{Cc}/gu, "").slice(0, max);
 }
 
 export function validarNombre(raw: string): { ok: true; valor: string } | { ok: false; error: string } {
