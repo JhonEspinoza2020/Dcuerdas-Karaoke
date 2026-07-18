@@ -283,25 +283,56 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
     setMostrarSaludo(true);
+    const mostradoDesde = Date.now();
+    const MIN_OVERLAY_MS = 4000;
     const volAntes = getVolumeRef.current();
-    // Bajar casi al mínimo la música para que el saludo se oiga fuerte.
-    setVolumeRef.current(2);
+    // Superponer: YouTube sigue; solo baja un poco para oír la voz.
+    const volDuranteSaludo = Math.max(28, Math.min(45, Math.round((volAntes || 100) * 0.4)));
+    setVolumeRef.current(volDuranteSaludo);
+    pausaUsuarioRef.current = false;
+    resumeRef.current();
+
+    // Chrome/Edge a veces pausan el iframe al hablar TTS; lo reanudamos.
+    const keepYt = window.setInterval(() => {
+      if (pausaUsuarioRef.current) return;
+      resumeRef.current();
+      setVolumeRef.current(volDuranteSaludo);
+    }, 800);
+
     let cerrado = false;
+    let delayOverlay: number | undefined;
     const cerrar = () => {
       if (cerrado) return;
       cerrado = true;
+      window.clearInterval(keepYt);
+      if (delayOverlay) window.clearTimeout(delayOverlay);
       setVolumeRef.current(volAntes > 5 ? volAntes : 100);
-      // La voz (TTS) a veces pausa el iframe de YouTube; hay que reanudarlo.
       pausaUsuarioRef.current = false;
       resumeRef.current();
       setMostrarSaludo(false);
       onListo?.();
     };
-    const cancelarVoz = leerSaludo(texto, { onEnd: cerrar });
-    // Una sola lectura; margen por si el texto es largo.
-    const tope = window.setTimeout(cerrar, 40000);
+    const cerrarCuandoToque = () => {
+      const falta = MIN_OVERLAY_MS - (Date.now() - mostradoDesde);
+      if (falta > 0) {
+        delayOverlay = window.setTimeout(cerrar, falta);
+        return;
+      }
+      cerrar();
+    };
+    const cancelarVoz = leerSaludo(texto, {
+      onStart: () => {
+        pausaUsuarioRef.current = false;
+        resumeRef.current();
+        setVolumeRef.current(volDuranteSaludo);
+      },
+      onEnd: cerrarCuandoToque,
+    });
+    const tope = window.setTimeout(cerrarCuandoToque, 40000);
     cancelarVozRef.current = () => {
       window.clearTimeout(tope);
+      window.clearInterval(keepYt);
+      if (delayOverlay) window.clearTimeout(delayOverlay);
       cancelarVoz();
       cerrar();
     };
@@ -348,16 +379,25 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         const audio = asegurarAudioAnuncio();
         anuncioReproduciendoRef.current = true;
         const volAntes = getVolumeRef.current();
-        pauseRef.current();
-        setVolumeRef.current(0);
+        // Superponer: YouTube sigue; baja un poco para oír el anuncio.
+        const volDurante = Math.max(22, Math.min(40, Math.round((volAntes || 100) * 0.35)));
+        setVolumeRef.current(volDurante);
+        pausaUsuarioRef.current = false;
+        resumeRef.current();
+
+        const keepYt = window.setInterval(() => {
+          if (pausaUsuarioRef.current) return;
+          resumeRef.current();
+          setVolumeRef.current(volDurante);
+        }, 800);
 
         let done = false;
         const fin = () => {
           if (done) return;
           done = true;
+          window.clearInterval(keepYt);
           anuncioReproduciendoRef.current = false;
           setVolumeRef.current(volAntes || 100);
-          // Tras fin de canción de cola no reanudar: completar() carga el siguiente.
           if (reanudar && !pausaUsuarioRef.current) resumeRef.current();
           resolve();
         };
@@ -374,6 +414,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         audio.onerror = () => finConTope();
         void audio.play().then(() => {
           anuncioUnlockRef.current = true;
+          resumeRef.current();
+          setVolumeRef.current(volDurante);
         }).catch(() => {
           window.setTimeout(() => {
             void audio.play().catch(() => finConTope());
