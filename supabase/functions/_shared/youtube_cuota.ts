@@ -1,23 +1,13 @@
 import { createServiceClient } from "./supabase.ts";
 
-function contarKeysConfiguradas(): number {
-  const raw = [Deno.env.get("YOUTUBE_API_KEYS"), Deno.env.get("YOUTUBE_API_KEY")]
-    .filter(Boolean)
-    .join(",");
-  const seen = new Set<string>();
-  for (const k of raw.split(/[,;\n]+/).map((x) => x.trim()).filter((x) => x.length > 20)) {
-    seen.add(k);
-  }
-  return seen.size;
-}
-
 /**
  * Tope de search.list por día (Lima) a nivel app.
- * Por defecto: ~100 por cada API key configurada (mín. 90).
+ * Default 100 (1 proyecto GCP ≈ 10k unidades ≈ 100 búsquedas).
  * Override: secret YOUTUBE_MAX_BUSQUEDAS_DIA.
+ * No multiplicamos por N keys: Google sancionó el pool multi-proyecto.
  */
 export function maxBusquedasDia(): number {
-  const auto = Math.max(90, contarKeysConfiguradas() * 100);
+  const auto = 100;
   const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? String(auto));
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : auto;
 }

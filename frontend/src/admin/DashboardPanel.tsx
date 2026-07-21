@@ -79,7 +79,7 @@ export function DashboardPanel({ accessToken }: Props) {
 
   const { stats, llegadas_hoy, frecuentes, youtube_busquedas, jornada } = data;
   const ytUsadas = youtube_busquedas?.usadas ?? stats.youtube_usadas ?? 0;
-  const ytMax = youtube_busquedas?.max ?? stats.youtube_max ?? 1000;
+  const ytMax = youtube_busquedas?.max ?? stats.youtube_max ?? 100;
   const esHoy = jornada?.es_hoy ?? fecha === claveJornadaHoy();
 
   return (

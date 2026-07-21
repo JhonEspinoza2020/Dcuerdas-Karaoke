@@ -1,8 +1,9 @@
 /**
- * Rotación de API keys de YouTube (un key por proyecto GCP).
- * Secrets:
- *   YOUTUBE_API_KEYS=key1,key2,key3
- *   YOUTUBE_API_KEY=key_legacy (opcional, fallback)
+ * Rotación de API keys de YouTube.
+ * Por defecto SOLO YOUTUBE_API_KEY (1 proyecto).
+ * Multi-proyecto (YOUTUBE_API_KEYS) queda desactivado salvo
+ * YOUTUBE_USE_MULTI_KEYS=true — Google sancionó el pool.
+ *
  * Soft-limit por key (default 99): YOUTUBE_SOFT_LIMIT_POR_KEY
  */
 
@@ -21,13 +22,15 @@ function parseKeys(raw: string | undefined): string[] {
     .filter((k) => k.length > 20);
 }
 
-/** Keys únicas en orden. */
+/** Keys únicas en orden. Multi solo si YOUTUBE_USE_MULTI_KEYS=true. */
 export function listYoutubeApiKeys(): string[] {
-  const multi = parseKeys(Deno.env.get("YOUTUBE_API_KEYS"));
+  const allowMulti = Deno.env.get("YOUTUBE_USE_MULTI_KEYS") === "true";
+  const multi = allowMulti ? parseKeys(Deno.env.get("YOUTUBE_API_KEYS")) : [];
   const single = parseKeys(Deno.env.get("YOUTUBE_API_KEY"));
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const k of [...multi, ...single]) {
+  // Preferir la key principal primero.
+  for (const k of [...single, ...multi]) {
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(k);
