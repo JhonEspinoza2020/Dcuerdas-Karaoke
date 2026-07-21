@@ -2,14 +2,15 @@ import { createServiceClient } from "./supabase.ts";
 
 /**
  * Tope de search.list por día (Lima) a nivel app.
- * Default 100 (1 proyecto GCP ≈ 10k unidades ≈ 100 búsquedas).
- * Override: secret YOUTUBE_MAX_BUSQUEDAS_DIA.
- * No multiplicamos por N keys: Google sancionó el pool multi-proyecto.
+ * Default y techo: 100 (1 proyecto ≈ 100 búsquedas).
+ * Solo si YOUTUBE_USE_MULTI_KEYS=true se respeta YOUTUBE_MAX_BUSQUEDAS_DIA > 100.
  */
 export function maxBusquedasDia(): number {
-  const auto = 100;
-  const n = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? String(auto));
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : auto;
+  const raw = Number(Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? "100");
+  const n = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 100;
+  if (Deno.env.get("YOUTUBE_USE_MULTI_KEYS") === "true") return Math.max(1, n);
+  // Una sola key: nunca mostrar/aceptar tope tipo 1000 del secret viejo.
+  return Math.min(100, Math.max(1, n || 100));
 }
 
 /**
