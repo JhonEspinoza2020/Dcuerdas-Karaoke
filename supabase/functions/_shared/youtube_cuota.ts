@@ -3,16 +3,20 @@ import { createServiceClient } from "./supabase.ts";
 /**
  * Tope de search.list por día (Lima) a nivel app.
  *
- * - Sin secret → 100 (1 proyecto, cuota estándar).
- * - Con YOUTUBE_MAX_BUSQUEDAS_DIA → ese valor (ej. 1000 si Google aprueba más cuota).
- *
- * Hoy deja el secret en 100. Cuando aprueben el trámite, cámbialo a 1000 (o lo que den).
+ * Hoy: siempre 100 (cuota estándar de un proyecto).
+ * Cuando Google apruebe más cuota, en Secrets pon:
+ *   YOUTUBE_CUOTA_AMPLIADA=true
+ *   YOUTUBE_MAX_BUSQUEDAS_DIA=1000
+ * (o el número que te den). Sin ese flag, un secret viejo en 1000 no engaña al panel.
  */
 export function maxBusquedasDia(): number {
+  const ampliada = Deno.env.get("YOUTUBE_CUOTA_AMPLIADA") === "true";
   const raw = (Deno.env.get("YOUTUBE_MAX_BUSQUEDAS_DIA") ?? "").trim();
-  if (raw !== "") {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  const parsed = raw !== "" ? Number(raw) : NaN;
+  const desdeSecret = Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
+
+  if (ampliada) {
+    return Math.max(1, desdeSecret ?? 1000);
   }
   return 100;
 }
