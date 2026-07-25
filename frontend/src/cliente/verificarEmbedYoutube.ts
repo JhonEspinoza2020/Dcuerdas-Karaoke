@@ -34,7 +34,8 @@ function crearHostCheck(): { host: HTMLDivElement; elId: string } {
 }
 
 function esEstadoReproduciendo(YT: NonNullable<Window["YT"]>, st: number | undefined): boolean {
-  return st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING;
+  // Solo PLAYING: BUFFERING aparece también en “vídeo no disponible” y dejaba colar basura.
+  return st === YT.PlayerState.PLAYING;
 }
 
 /**

@@ -2584,6 +2584,21 @@ a { color: inherit; }
 .player-wrap { position: absolute; inset: 0; z-index: 1; }
 .player-wrap iframe { width: 100% !important; height: 100% !important; }
 
+.player-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #a89f94;
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
 /* Las capas informativas no deben capturar clics: los controles de YouTube
    quedan accesibles debajo (pausar, mover la barra, volumen). */
 .now-playing-bar, .proximas, .watermark { pointer-events: none; }

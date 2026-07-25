@@ -29,10 +29,14 @@ function textoIdleAmbiente(poolVersion: number, poolSize: number): string {
   return `Ambiente: ${poolSize} canciones.`;
 }
 
-/** Ambiente = canciones ENVIADAS (BD). YouTube a veces bloquea embed → saltamos a otra. */
-const ERROR_GRACE_MS = 0;
-const RADIO_WATCHDOG_MS = 3000;
+/**
+ * Ambiente: tapa hasta PLAYING real (no destapar a ciegas → se veía “no disponible”).
+ * Saltar con lock: varios clics seguidos no lanzan carreras.
+ */
+const ERROR_GRACE_MS = 900;
+const RADIO_WATCHDOG_MS = 3200;
 const COLA_WATCHDOG_MS = 4500;
+const RADIO_RETRY_MS = 5000;
 
 function aleatorioEntero(maxExclusivo: number): number {
   if (maxExclusivo <= 1) return 0;
@@ -63,6 +67,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const [mostrarSaludo, setMostrarSaludo] = useState(false);
   const [error, setError] = useState("");
   const [relleno, setRelleno] = useState(false);
+  /** Tapa el iframe mientras arranca ambiente (evita “no disponible” a la vista). */
+  const [radioCubierto, setRadioCubierto] = useState(false);
+  const [saltandoUi, setSaltandoUi] = useState(false);
   const [poolVersion, setPoolVersion] = useState(0);
   const [tituloAmbiente, setTituloAmbiente] = useState("");
   const [poolSize, setPoolSize] = useState(0);
@@ -86,16 +93,34 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const playRef = useRef<(id: string) => void>(() => {});
   const resumeRef = useRef<() => void>(() => {});
   const pauseRef = useRef<() => void>(() => {});
+  const stopRef = useRef<() => void>(() => {});
+  const muteRef = useRef<() => void>(() => {});
+  const unMuteRef = useRef<() => void>(() => {});
   const setVolumeRef = useRef<(v: number) => void>(() => {});
   const getVolumeRef = useRef<() => number>(() => 100);
+  const getStateRef = useRef<() => number>(() => -1);
   const cancelarVozRef = useRef<() => void>(() => {});
   const saludoFinalPendienteRef = useRef(false);
+  /** Overlay/TTS de saludo activo (ref: el state llega un tick tarde). */
+  const saludoActivoRef = useRef(false);
   const pausaUsuarioRef = useRef(false);
+  /** True solo tras PLAYING real (no BUFFERING): sirve para pausa vs video muerto. */
+  const yaSonabaRef = useRef(false);
+  /** Evita mostrar el error de YT mientras arranca / salta ambiente. */
+  const radioCubiertoRef = useRef(false);
+  const radioRetryTimerRef = useRef<number | undefined>(undefined);
+  /** Invalida watchdogs/timeouts viejos al saltar o cambiar de tema. */
+  const radioGenRef = useRef(0);
+  /** Un solo Saltar a la vez (varios clics bloqueaban el sistema). */
+  const saltarEnCursoRef = useRef(false);
   const visibleAntesRef = useRef(false);
   /** Solo true después de abrir la pestaña Reproductor al menos una vez. */
   const sesionActivaRef = useRef(false);
   const radioErrorLockRef = useRef(false);
+  /** Evita mensajes de error mientras el admin salta de tema. */
+  const saltandoRef = useRef(false);
   const iniciarRellenoRef = useRef<() => void>(() => {});
+  const iniciarCancionRef = useRef<(c: ColaItem) => void>(() => {});
   const completarRef = useRef<(id: number) => void>(() => {});
   /** Canciones de cola (clientes) desde el último anuncio. */
   const cancionesDesdeAnuncioRef = useRef(0);
@@ -121,26 +146,56 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   }, []);
 
   const playVideo = useCallback((videoId: string, comoRadio = false) => {
+    const gen = ++radioGenRef.current;
     ignoreErrorUntilRef.current = Date.now() + ERROR_GRACE_MS;
+    yaSonabaRef.current = false;
+    if (comoRadio) {
+      radioCubiertoRef.current = true;
+      setRadioCubierto(true);
+      muteRef.current();
+    }
     playRef.current(videoId);
     clearRadioWatchdog();
+
     const esperado = videoId;
     radioWatchdogRef.current = window.setTimeout(() => {
+      if (gen !== radioGenRef.current) return;
       if (comoRadio) {
         if (!rellenoActivoRef.current) return;
         if (videoActualRadioRef.current !== esperado) return;
+        if (pausaUsuarioRef.current && yaSonabaRef.current) return;
+        // No sonó de verdad → basura + siguiente (tapa sigue hasta el próximo PLAYING).
         bloqueadosRadioRef.current.add(esperado);
         api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
         radioErrorLockRef.current = false;
-        setError("YouTube no dejó reproducir ese video. Probando otro del historial…");
+        const pendiente = colaRef.current.find(
+          (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
+        );
+        if (pendiente) {
+          rellenoActivoRef.current = false;
+          setRelleno(false);
+          radioCubiertoRef.current = false;
+          setRadioCubierto(false);
+          videoActualRadioRef.current = null;
+          setError("");
+          unMuteRef.current();
+          saltarEnCursoRef.current = false;
+          setSaltandoUi(false);
+          iniciarCancionRef.current(pendiente);
+          return;
+        }
+        setError("");
         iniciarRellenoRef.current();
         return;
       }
       const actual = actualRef.current;
       if (!actual || actual.youtube_video_id !== esperado) return;
       if (rellenoActivoRef.current) return;
+      if (pausaUsuarioRef.current && yaSonabaRef.current) return;
+      // No saltar pedidos mientras suena saludo/anuncio (TTS puede pausar YT un momento).
+      if (saludoActivoRef.current || anuncioReproduciendoRef.current) return;
       api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_cola").catch(() => {});
-      setError("YouTube bloqueó este video. Saltando…");
+      setError("");
       completarRef.current(actual.id);
     }, comoRadio ? RADIO_WATCHDOG_MS : COLA_WATCHDOG_MS);
   }, [clearRadioWatchdog]);
@@ -215,14 +270,42 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
 
   const detenerRadio = useCallback((mensaje?: string) => {
     clearRadioWatchdog();
+    if (radioRetryTimerRef.current) {
+      window.clearTimeout(radioRetryTimerRef.current);
+      radioRetryTimerRef.current = undefined;
+    }
     radioErrorLockRef.current = true;
     rellenoActivoRef.current = false;
     radioArrancadaRef.current = true;
     videoActualRadioRef.current = null;
+    radioCubiertoRef.current = false;
     setRelleno(false);
+    setRadioCubierto(false);
     setTituloAmbiente("");
-    setError(mensaje ?? "");
+    // Ambiente: nunca banner rojo; el local debe seguir solo.
+    if (mensaje && !mensaje.includes("YouTube") && !mensaje.includes("embeber")) {
+      setError(mensaje);
+    } else {
+      setError("");
+    }
+    stopRef.current();
   }, [clearRadioWatchdog]);
+
+  const programarReintentoRadio = useCallback(() => {
+    if (radioRetryTimerRef.current) window.clearTimeout(radioRetryTimerRef.current);
+    radioRetryTimerRef.current = window.setTimeout(() => {
+      radioRetryTimerRef.current = undefined;
+      if (hayPedidoEnCola() || actualRef.current) return;
+      if (pausaUsuarioRef.current) return;
+      bloqueadosRadioRef.current.clear();
+      radioArrancadaRef.current = false;
+      void (async () => {
+        await cargarPoolRadio();
+        if (hayPedidoEnCola() || actualRef.current) return;
+        iniciarRellenoRef.current();
+      })();
+    }, RADIO_RETRY_MS);
+  }, [cargarPoolRadio]);
 
   const iniciarRelleno = useCallback(() => {
     if (procesandoRef.current) return;
@@ -234,10 +317,15 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     radioErrorLockRef.current = false;
     cancelarVozRef.current();
     setMostrarSaludo(false);
+    setError("");
 
     const pool = poolRadioRef.current;
     if (pool.length === 0) {
-      detenerRadio("Sin canciones enviadas para el ambiente.");
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
+      setRelleno(false);
+      setTituloAmbiente("");
+      programarReintentoRadio();
       return;
     }
 
@@ -250,16 +338,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       preferidasRef.current,
     );
     if (!id) id = elegirAlAzar(pool, bloqueadosRadioRef.current, preferidasRef.current);
-    if (!id && bloqueadosRadioRef.current.size > 0) {
-      // Si casi todos fallaron por embed, reintentar el pool limpio una vez.
-      const sinActual = videoActualRadioRef.current;
-      bloqueadosRadioRef.current.clear();
-      id = elegirAlAzar(pool, sinActual ? [sinActual] : [], preferidasRef.current);
-    }
     if (!id) {
-      detenerRadio(
-        "YouTube bloqueó los videos del historial (no permiten embeber). Pide letra/karaoke desde una mesa.",
-      );
+      // Pool agotado en esta ronda → reintentar solo, sin logo negro eterno.
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
+      setRelleno(false);
+      setTituloAmbiente("");
+      programarReintentoRadio();
       return;
     }
 
@@ -270,7 +355,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     setTituloAmbiente(titulosPoolRef.current.get(id) ?? "");
     videoActualRadioRef.current = id;
     playVideo(id, true);
-  }, [detenerRadio, playVideo]);
+  }, [playVideo, programarReintentoRadio]);
 
   iniciarRellenoRef.current = iniciarRelleno;
 
@@ -279,17 +364,23 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const texto = cancion.saludo?.trim();
     if (!texto) {
       setMostrarSaludo(false);
+      saludoActivoRef.current = false;
       onListo?.();
       return;
     }
+    // Pedidos/saludo nunca detrás de la tapa de ambiente.
+    radioCubiertoRef.current = false;
+    setRadioCubierto(false);
     setMostrarSaludo(true);
+    saludoActivoRef.current = true;
     const mostradoDesde = Date.now();
-    const MIN_OVERLAY_MS = 4000;
+    const MIN_OVERLAY_MS = 6000;
     const volAntes = getVolumeRef.current();
     // Superponer: YouTube sigue; solo baja un poco para oír la voz.
     const volDuranteSaludo = Math.max(28, Math.min(45, Math.round((volAntes || 100) * 0.4)));
     setVolumeRef.current(volDuranteSaludo);
     pausaUsuarioRef.current = false;
+    unMuteRef.current();
     resumeRef.current();
 
     // Chrome/Edge a veces pausan el iframe al hablar TTS; lo reanudamos.
@@ -308,6 +399,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       if (delayOverlay) window.clearTimeout(delayOverlay);
       setVolumeRef.current(volAntes > 5 ? volAntes : 100);
       pausaUsuarioRef.current = false;
+      saludoActivoRef.current = false;
       resumeRef.current();
       setMostrarSaludo(false);
       onListo?.();
@@ -383,6 +475,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         const volDurante = Math.max(22, Math.min(40, Math.round((volAntes || 100) * 0.35)));
         setVolumeRef.current(volDurante);
         pausaUsuarioRef.current = false;
+        // No tapar con cover de radio: el anuncio debe oírse sobre el video.
+        unMuteRef.current();
         resumeRef.current();
 
         const keepYt = window.setInterval(() => {
@@ -487,12 +581,18 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     pausaUsuarioRef.current = false;
     radioErrorLockRef.current = false;
     videoActualRadioRef.current = null;
+    radioCubiertoRef.current = false;
+    setRadioCubierto(false);
+    saltarEnCursoRef.current = false;
+    setSaltandoUi(false);
     clearRadioWatchdog();
     cancelarVozRef.current();
     setMostrarSaludo(false);
+    saludoActivoRef.current = false;
     setRelleno(false);
     setError("");
     setTituloAmbiente("");
+    unMuteRef.current();
 
     try {
       const updated = await api.actualizarEstado(accessToken, cancion.id, "reproduciendo");
@@ -518,6 +618,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       procesandoRef.current = false;
     }
   }, [accessToken, presentarSaludo, iniciarRelleno, playVideo, clearRadioWatchdog]);
+
+  iniciarCancionRef.current = iniciarCancion;
 
   const completar = useCallback(async (id: number) => {
     saludoFinalPendienteRef.current = false;
@@ -547,12 +649,29 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     await reproducirAnuncio({ reanudar: false });
   }, [reproducirAnuncio]);
 
+  const primerPendienteCola = () =>
+    colaRef.current.find(
+      (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
+    ) ?? null;
+
   const onEnded = useCallback(() => {
+    // Fin natural del tema (no es pausa del admin).
+    pausaUsuarioRef.current = false;
     if (procesandoRef.current) return;
     if (radioErrorLockRef.current) return;
     if (rellenoActivoRef.current) {
       void (async () => {
         await contarCancionHaciaAnuncio();
+        const pendiente = primerPendienteCola();
+        if (pendiente) {
+          // Termina ambiente → pasa a la cola del cliente (sin haberla cortado antes).
+          rellenoActivoRef.current = false;
+          setRelleno(false);
+          videoActualRadioRef.current = null;
+          clearRadioWatchdog();
+          await iniciarCancion(pendiente);
+          return;
+        }
         if (!hayPedidoEnCola()) iniciarRelleno();
       })();
       return;
@@ -578,20 +697,22 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
     void terminarConPosibleAnuncio();
-  }, [completar, iniciarRelleno, presentarSaludo, contarCancionHaciaAnuncio]);
+  }, [completar, iniciarRelleno, iniciarCancion, presentarSaludo, contarCancionHaciaAnuncio, clearRadioWatchdog]);
 
-  const onError = useCallback((_code: number) => {
+  const onError = useCallback((code: number) => {
     if (procesandoRef.current) return;
     if (radioErrorLockRef.current) return;
-    if (Date.now() < ignoreErrorUntilRef.current) return;
+    if (Date.now() < ignoreErrorUntilRef.current && !rellenoActivoRef.current) return;
+
+    const embedMuerto = code === 100 || code === 101 || code === 150 || code === 2;
 
     if (!rellenoActivoRef.current) {
       const current = actualRef.current;
       const maloId = current?.youtube_video_id;
-      if (maloId) {
+      if (maloId && embedMuerto) {
         api.marcarYoutubeBloqueado(accessToken, maloId, "player_error_cola").catch(() => {});
       }
-      setError("YouTube no permite este video fuera de youtube.com. Saltando…");
+      setError("");
       if (current) completar(current.id);
       else if (!hayPedidoEnCola()) iniciarRelleno();
       return;
@@ -603,30 +724,62 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       api.marcarYoutubeBloqueado(accessToken, malo, "player_error_radio").catch(() => {});
     }
     clearRadioWatchdog();
+    setError("");
+    radioCubiertoRef.current = true;
+    setRadioCubierto(true);
     if (hayPedidoEnCola()) {
-      detenerRadio();
+      const pendiente = primerPendienteCola();
+      rellenoActivoRef.current = false;
+      setRelleno(false);
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
+      videoActualRadioRef.current = null;
+      unMuteRef.current();
+      saltarEnCursoRef.current = false;
+      setSaltandoUi(false);
+      if (pendiente) void iniciarCancion(pendiente);
+      else detenerRadio();
       return;
     }
-    setError("YouTube bloqueó ese video (no embebe). Probando otro del historial…");
     radioErrorLockRef.current = false;
     iniciarRelleno();
-  }, [completar, iniciarRelleno, detenerRadio, clearRadioWatchdog, accessToken]);
+  }, [completar, iniciarRelleno, iniciarCancion, detenerRadio, clearRadioWatchdog, accessToken]);
 
   const handlePlayingChange = useCallback((playing: boolean) => {
     if (playing) {
       pausaUsuarioRef.current = false;
       radioErrorLockRef.current = false;
-      clearRadioWatchdog();
       setError("");
+      const st = getStateRef.current();
+      // Solo PLAYING (1) destapa y libera Saltar.
+      if (st === 1) {
+        yaSonabaRef.current = true;
+        clearRadioWatchdog();
+        saltarEnCursoRef.current = false;
+        setSaltandoUi(false);
+        unMuteRef.current();
+        const vol = getVolumeRef.current();
+        if (vol < 5) setVolumeRef.current(100);
+        if (radioCubiertoRef.current) {
+          radioCubiertoRef.current = false;
+          setRadioCubierto(false);
+        }
+      }
       const mesa = actualRef.current;
       if (mesa?.youtube_video_id) agregarAlPool(mesa.youtube_video_id, mesa.titulo_cancion);
-    } else if (!rellenoActivoRef.current) {
+    } else if (
+      !saltarEnCursoRef.current &&
+      !anuncioReproduciendoRef.current &&
+      !saludoActivoRef.current &&
+      !radioCubiertoRef.current &&
+      yaSonabaRef.current
+    ) {
       pausaUsuarioRef.current = true;
     }
     onPlayingChange?.(playing);
   }, [onPlayingChange, agregarAlPool, clearRadioWatchdog]);
 
-  const { ready, play, resume, pause, setVolume, getVolume } = useYouTubePlayer(
+  const { ready, play, resume, pause, stop, mute, unMute, setVolume, getVolume, getPlayerState } = useYouTubePlayer(
     onEnded,
     onError,
     handlePlayingChange,
@@ -634,8 +787,29 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   playRef.current = play;
   resumeRef.current = resume;
   pauseRef.current = pause;
+  stopRef.current = stop;
+  muteRef.current = mute;
+  unMuteRef.current = unMute;
   setVolumeRef.current = setVolume;
   getVolumeRef.current = getVolume;
+  getStateRef.current = getPlayerState;
+
+  // Si el ambiente quedó parado, reanudar solo (sin que el admin vuelva a la PC).
+  useEffect(() => {
+    if (!visible || !ready || !sesionActivaRef.current) return;
+    if (actual || relleno) return;
+    if (poolSize === 0) return;
+    if (hayPedidoEnCola()) return;
+    const t = window.setTimeout(() => {
+      if (actualRef.current || rellenoActivoRef.current || hayPedidoEnCola()) return;
+      if (pausaUsuarioRef.current) return;
+      radioArrancadaRef.current = false;
+      radioErrorLockRef.current = false;
+      setError("");
+      iniciarRellenoRef.current();
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [visible, ready, actual, relleno, poolSize, error]);
 
   useEffect(() => {
     // No arrancar audio hasta que el admin abra la pestaña Reproductor.
@@ -647,6 +821,21 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const reproduciendo = enCola.find((c) => c.estado === "reproduciendo");
     const pendiente = enCola.find((c) => c.estado === "pendiente");
 
+    // Ambiente de casa sonando: la cola del cliente espera al fin del tema actual.
+    // Antes se cortaba al instante y pelea con la radio (bloqueo / vuelve atrás).
+    if (rellenoActivoRef.current) {
+      if (reproduciendo && actualRef.current?.id !== reproduciendo.id) {
+        rellenoActivoRef.current = false;
+        setRelleno(false);
+        videoActualRadioRef.current = null;
+        clearRadioWatchdog();
+        setActual(reproduciendo);
+        pausaUsuarioRef.current = false;
+        playVideo(reproduciendo.youtube_video_id, false);
+      }
+      return;
+    }
+
     if (enCola.length === 0) {
       if (actual) {
         cancelarVozRef.current();
@@ -654,12 +843,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         setActual(null);
       }
       if (poolVersion === 0) return;
-      if (!radioArrancadaRef.current) iniciarRelleno();
+      if (!radioArrancadaRef.current && !rellenoActivoRef.current) iniciarRelleno();
       return;
     }
-
-    radioArrancadaRef.current = false;
-    rellenoActivoRef.current = false;
 
     if (actual && !enCola.some((c) => c.id === actual.id)) {
       cancelarVozRef.current();
@@ -692,7 +878,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     }
 
     if (!actual && pendiente) iniciarCancion(pendiente);
-  }, [ready, cola, actual, iniciarCancion, iniciarRelleno, playVideo, poolVersion, visible]);
+  }, [ready, cola, actual, iniciarCancion, iniciarRelleno, playVideo, poolVersion, visible, clearRadioWatchdog]);
 
   // Al cargar el pool: solo ambientar si ya se abrió Reproductor.
   useEffect(() => {
@@ -719,7 +905,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     reiniciarTimerMinutos();
 
     if (!acabaDeAbrir) {
-      if (rellenoActivoRef.current && !pausaUsuarioRef.current) resumeRef.current();
+      // No forzar resume aquí: al cambiar deps del efecto reanudaba encima de la pausa del admin.
       return;
     }
 
@@ -742,6 +928,11 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const proximas = cola.filter((c) => c.estado === "pendiente");
 
   const saltar = async () => {
+    // Varios clics seguidos = carreras (varios iniciarRelleno / watchdogs) → se “loquea”.
+    if (saltarEnCursoRef.current) return;
+    saltarEnCursoRef.current = true;
+    setSaltandoUi(true);
+
     cancelarVozRef.current();
     if (anuncioAudioRef.current) {
       anuncioAudioRef.current.pause();
@@ -752,52 +943,99 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     saludoFinalPendienteRef.current = false;
     pausaUsuarioRef.current = false;
     radioErrorLockRef.current = false;
-    ignoreErrorUntilRef.current = 0;
+    saltandoRef.current = true;
+    ignoreErrorUntilRef.current = Date.now() + ERROR_GRACE_MS;
+    // Invalida timeouts pendientes de temas anteriores.
+    radioGenRef.current += 1;
     clearRadioWatchdog();
     setError("");
+    saludoActivoRef.current = false;
 
-    const current = actualRef.current;
-    if (current) {
-      // Saltar una canción de cola también cuenta para el anuncio.
-      await contarCancionHaciaAnuncio();
-      await completar(current.id);
-      return;
+    // Tapa/mute solo al saltar ambiente (no pedidos de mesa ni saludo).
+    const saltandoAmbiente =
+      !actualRef.current && (rellenoActivoRef.current || !!videoActualRadioRef.current);
+    if (saltandoAmbiente) {
+      radioCubiertoRef.current = true;
+      setRadioCubierto(true);
+      muteRef.current();
     }
 
-    if (hayPedidoEnCola()) {
-      const pendiente = colaRef.current.find(
-        (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
-      );
-      if (pendiente) {
-        iniciarCancion(pendiente);
-        return;
-      }
-      const enCurso = colaRef.current.find(
-        (c) => !completadasRef.current.has(c.id) && c.estado === "reproduciendo",
-      );
-      if (enCurso) {
+    const liberarSiQuedoColgado = window.setTimeout(() => {
+      saltarEnCursoRef.current = false;
+      setSaltandoUi(false);
+      saltandoRef.current = false;
+    }, 10_000);
+
+    try {
+      const current = actualRef.current;
+      if (current) {
         await contarCancionHaciaAnuncio();
-        await completar(enCurso.id);
+        await completar(current.id);
+        // Pedido de mesa: liberar Saltar; la sync arranca el siguiente.
+        window.clearTimeout(liberarSiQuedoColgado);
+        saltarEnCursoRef.current = false;
+        setSaltandoUi(false);
         return;
       }
-    }
 
-    const actualRadio = videoActualRadioRef.current;
-    if (actualRadio || rellenoActivoRef.current) {
-      await contarCancionHaciaAnuncio();
-      if (actualRadio) bloqueadosRadioRef.current.add(actualRadio);
+      if (hayPedidoEnCola()) {
+        const pendiente = colaRef.current.find(
+          (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
+        );
+        if (pendiente) {
+          await iniciarCancion(pendiente);
+          return;
+        }
+        const enCurso = colaRef.current.find(
+          (c) => !completadasRef.current.has(c.id) && c.estado === "reproduciendo",
+        );
+        if (enCurso) {
+          await contarCancionHaciaAnuncio();
+          await completar(enCurso.id);
+          return;
+        }
+      }
+
+      const actualRadio = videoActualRadioRef.current;
+      if (actualRadio || rellenoActivoRef.current) {
+        await contarCancionHaciaAnuncio();
+        const pendiente = primerPendienteCola();
+        if (pendiente) {
+          rellenoActivoRef.current = false;
+          setRelleno(false);
+          videoActualRadioRef.current = null;
+          clearRadioWatchdog();
+          await iniciarCancion(pendiente);
+          return;
+        }
+        if (actualRadio) {
+          bloqueadosRadioRef.current.add(actualRadio);
+          if (!yaSonabaRef.current) {
+            api.marcarYoutubeBloqueado(accessTokenRef.current, actualRadio, "saltar_radio").catch(() => {});
+          }
+        }
+        if (poolRadioRef.current.length === 0) await cargarPoolRadio();
+        radioArrancadaRef.current = false;
+        iniciarRelleno();
+        return;
+      }
+
       if (poolRadioRef.current.length === 0) await cargarPoolRadio();
       radioArrancadaRef.current = false;
       iniciarRelleno();
-      return;
+    } catch {
+      window.clearTimeout(liberarSiQuedoColgado);
+      saltarEnCursoRef.current = false;
+      setSaltandoUi(false);
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
+    } finally {
+      saltandoRef.current = false;
     }
-
-    if (poolRadioRef.current.length === 0) await cargarPoolRadio();
-    radioArrancadaRef.current = false;
-    iniciarRelleno();
   };
 
-  const puedeSaltar = !!actual || relleno || hayPedidoEnCola() || !!error;
+  const puedeSaltar =
+    !saltandoUi && (!!actual || relleno || hayPedidoEnCola() || radioCubierto || !!error);
 
   return (
     <div className="reproductor-wrap">
@@ -823,6 +1061,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           <div id="yt-player" />
         </div>
 
+        {radioCubierto && (
+          <div className="player-cover" aria-live="polite">
+            <BrandLogo size="nav" />
+          </div>
+        )}
+
         {!actual && !relleno && (
           <div className="idle">
             <BrandLogo size="hero" className="idle-logo" />
@@ -833,7 +1077,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           </div>
         )}
 
-        {relleno && !actual && (
+        {relleno && !actual && !radioCubierto && (
           <div className="radio-badge">
             <span className="radio-badge-punto" />
             <div className="radio-badge-texto">

@@ -20,6 +20,7 @@ interface YTPlayer {
   pauseVideo(): void;
   playVideo(): void;
   mute(): void;
+  unMute(): void;
   getPlayerState(): number;
   setShuffle(shufflePlaylist: boolean): void;
   setLoop(loopPlaylist: boolean): void;

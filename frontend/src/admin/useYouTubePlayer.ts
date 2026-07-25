@@ -39,7 +39,8 @@ function manejarEstadoPlayer(
     onPlayingChange?.(false);
     return;
   }
-  if (data === YT.PlayerState.PLAYING || data === YT.PlayerState.BUFFERING) {
+  // Solo PLAYING destapa/confirma. BUFFERING en “no disponible” no debe abrir la tapa.
+  if (data === YT.PlayerState.PLAYING) {
     onPlayingChange?.(true);
   }
 }
@@ -114,6 +115,8 @@ export function useYouTubePlayer(
     p.loadVideoById(videoId);
     window.setTimeout(() => {
       try {
+        // Mute primero: el autoplay del navegador suele permitir muted y luego subimos volumen.
+        p.mute?.();
         p.playVideo?.();
       } catch {
         /* ignore */
@@ -129,11 +132,37 @@ export function useYouTubePlayer(
     playerRef.current?.pauseVideo?.();
   };
 
+  const stop = () => {
+    try {
+      playerRef.current?.stopVideo?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const mute = () => {
+    try {
+      playerRef.current?.mute?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const unMute = () => {
+    try {
+      playerRef.current?.unMute?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const setVolume = (vol: number) => {
     playerRef.current?.setVolume?.(Math.max(0, Math.min(100, vol)));
   };
 
   const getVolume = () => playerRef.current?.getVolume?.() ?? 100;
 
-  return { ready, play, resume, pause, setVolume, getVolume };
+  const getPlayerState = () => playerRef.current?.getPlayerState?.() ?? -1;
+
+  return { ready, play, resume, pause, stop, mute, unMute, setVolume, getVolume, getPlayerState };
 }
