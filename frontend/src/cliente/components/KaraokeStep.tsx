@@ -23,6 +23,17 @@ import { verificarEmbedYoutube } from "../verificarEmbedYoutube";
 const DEBOUNCE_MS = 1100;
 const MIN_CARACTERES = 3;
 
+/**
+ * Safari/iOS suele fallar el preflight (iframe oculto + autoplay) aunque el video
+ * sí suene en la TV del admin. En ese caso confiamos en el check del servidor al encolar.
+ */
+function esIphoneOiPad(): boolean {
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ a veces se reporta como Mac con touch.
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
 function mensajeLimiteUi(limite: LimiteCola, t: typeof es.musica): string {
   if (limite.motivo === "limite_mesa" || limite.motivo === "limite_persona" || !limite.puede_encolar) {
     if (limite.espera_segundos > 0) {
@@ -272,24 +283,27 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
     setLoading(true);
     setError("");
     try {
-      // Preflight real: misma prueba que el reproductor admin (detecta LatinAutor).
-      const reproducible = await verificarEmbedYoutube(seleccionado.video_id);
-      if (!reproducible) {
-        api.reportarYoutubeBloqueado(numeroMesa, token, seleccionado.video_id, "cliente_preflight")
-          .catch(() => {});
-        api.invalidarBusquedaVideo(seleccionado.video_id);
-        setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
-        setSeleccionado(null);
-        setError(
-          "Ese video lo bloquea YouTube en el local. Elige otra versión (busca con “letra” o “karaoke”).",
-        );
-        // Evitar que el buscador recupere el foco y abra el teclado encima de los resultados.
-        window.setTimeout(() => {
-          busquedaInputRef.current?.blur();
-          (document.activeElement as HTMLElement | null)?.blur?.();
-          errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }, 0);
-        return;
+      // Android/PC: prueba en el celular (iframe). iPhone/iPad: Safari falla esa prueba,
+      // así que solo mostramos "Comprobando video…" y valida el SERVIDOR al encolar.
+      // No cambia el Reproductor admin: mismos pedidos en cola + blacklist si falla en TV.
+      if (!esIphoneOiPad()) {
+        const reproducible = await verificarEmbedYoutube(seleccionado.video_id);
+        if (!reproducible) {
+          api.reportarYoutubeBloqueado(numeroMesa, token, seleccionado.video_id, "cliente_preflight")
+            .catch(() => {});
+          api.invalidarBusquedaVideo(seleccionado.video_id);
+          setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
+          setSeleccionado(null);
+          setError(
+            "Ese video lo bloquea YouTube en el local. Elige otra versión (busca con “letra” o “karaoke”).",
+          );
+          window.setTimeout(() => {
+            busquedaInputRef.current?.blur();
+            (document.activeElement as HTMLElement | null)?.blur?.();
+            errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }, 0);
+          return;
+        }
       }
 
       const res = await api.encolarCancion({
@@ -326,8 +340,14 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       setQuery("");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al encolar";
-      setError(msg);
-      if (seleccionado && /no se puede reproducir|video_no_reproducible|bloquea/i.test(msg)) {
+      const videoNoValido = /no se puede reproducir|video_no_reproducible|bloquea/i.test(msg);
+      // Mismo texto que el preflight de Android, para que iPhone no vea un error raro de API.
+      setError(
+        videoNoValido
+          ? "Ese video lo bloquea YouTube en el local. Elige otra versión (busca con “letra” o “karaoke”)."
+          : msg,
+      );
+      if (seleccionado && videoNoValido) {
         api.invalidarBusquedaVideo(seleccionado.video_id);
         setResultados((prev) => prev.filter((v) => v.video_id !== seleccionado.video_id));
         setSeleccionado(null);
