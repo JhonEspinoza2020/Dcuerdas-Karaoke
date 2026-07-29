@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
+  /** DSN público del proyecto Sentry (opcional). Sin esto, Sentry no arranca. */
+  readonly VITE_SENTRY_DSN?: string;
 }
 
 interface ImportMeta {
