@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, speechRecognitionSupported, startVoiceSearch, type VideoResult } from "@dcuerdas/shared";
 import { MicIcon, SearchIcon } from "../cliente/components/Icons";
 import { verificarEmbedYoutube } from "../cliente/verificarEmbedYoutube";
+import { YoutubeAttribution } from "../components/YoutubeAttribution";
 
 type Props = { readonly accessToken: string };
 
@@ -180,6 +181,7 @@ export function AdminBuscadorMusica({ accessToken }: Props) {
           {okMsg && <p className="admin-buscador-ok">{okMsg}</p>}
 
           <div className="admin-buscador-lista">
+            {resultados.length > 0 && <YoutubeAttribution soloMarca />}
             {resultados.map((v) => {
               const malo = bloqueados.has(v.video_id);
               let etiquetaBtn = malo ? "No" : "Añadir";
@@ -190,7 +192,7 @@ export function AdminBuscadorMusica({ accessToken }: Props) {
                   className={`admin-buscador-item ${malo ? "is-blocked" : ""}`}
                 >
                   {v.miniatura_url ? (
-                    <img src={v.miniatura_url} alt="" />
+                    <img src={v.miniatura_url} alt="" width={120} height={70} />
                   ) : (
                     <div className="admin-buscador-ph" />
                   )}
@@ -198,6 +200,7 @@ export function AdminBuscadorMusica({ accessToken }: Props) {
                     <div className="admin-buscador-cancion">{v.titulo}</div>
                     {v.canal && <div className="admin-buscador-canal">{v.canal}</div>}
                     {malo && <div className="admin-buscador-canal">No reproducible aquí</div>}
+                    <YoutubeAttribution videoId={v.video_id} />
                   </div>
                   <button
                     type="button"

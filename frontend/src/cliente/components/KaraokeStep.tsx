@@ -18,6 +18,7 @@ import {
 import { ColaClientePanel, mensajeAntes, type ColaPublicaItem } from "./ColaClientePanel";
 import { MusicIcon, SearchIcon, HeartIcon, ArrowRightIcon, CheckIcon, PlayIcon, MicIcon } from "./Icons";
 import { verificarEmbedYoutube } from "../verificarEmbedYoutube";
+import { YoutubeAttribution } from "../../components/YoutubeAttribution";
 
 /** Espera a que el usuario deje de escribir antes de pegarle a YouTube. */
 const DEBOUNCE_MS = 1100;
@@ -479,20 +480,23 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
               </div>
 
               <div className="results">
+                {resultados.length > 0 && <YoutubeAttribution soloMarca />}
                 {resultados.map((v) => (
-                  <button
-                    key={v.video_id}
-                    type="button"
-                    className="video-card video-card-pick"
-                    onClick={() => elegirCancion(v)}
-                  >
-                    <img src={v.miniatura_url} alt="" />
-                    <div className="info">
-                      <div className="titulo">{v.titulo}</div>
-                      {v.canal && <div className="canal">{v.canal}</div>}
-                    </div>
-                    <span className="video-pick-hint">Elegir</span>
-                  </button>
+                  <div key={v.video_id} className="video-card video-card-pick">
+                    <button
+                      type="button"
+                      className="video-card-main"
+                      onClick={() => elegirCancion(v)}
+                    >
+                      <img src={v.miniatura_url} alt="" width={120} height={70} />
+                      <div className="info">
+                        <div className="titulo">{v.titulo}</div>
+                        {v.canal && <div className="canal">{v.canal}</div>}
+                      </div>
+                      <span className="video-pick-hint">Elegir</span>
+                    </button>
+                    <YoutubeAttribution videoId={v.video_id} />
+                  </div>
                 ))}
               </div>
             </>
@@ -503,10 +507,11 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
               <div className="envio-cancion-elegida">
                 <div className="envio-cancion-label">{t.elegida}</div>
                 <div className="envio-cancion-card">
-                  <img src={seleccionado.miniatura_url} alt="" />
+                  <img src={seleccionado.miniatura_url} alt="" width={120} height={70} />
                   <div className="info">
                     <div className="titulo">{seleccionado.titulo}</div>
                     {seleccionado.canal && <div className="canal">{seleccionado.canal}</div>}
+                    <YoutubeAttribution videoId={seleccionado.video_id} />
                   </div>
                 </div>
                 <button type="button" className="btn-text" onClick={cambiarCancion}>

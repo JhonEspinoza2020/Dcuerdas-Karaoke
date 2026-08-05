@@ -5,6 +5,7 @@ import { initSentry, Sentry } from "./sentry";
 import { MesaPage } from "./cliente/pages/MesaPage";
 import { AdminApp } from "./admin/AdminApp";
 import { Landing } from "./Landing";
+import { Privacidad } from "./Privacidad";
 import "./index.css";
 
 initSentry();
@@ -26,6 +27,7 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <SentryRoutes>
           <Route path="/" element={<Landing />} />
+          <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/mesa/:numero" element={<MesaPage />} />
           <Route path="/admin" element={<AdminApp />} />
           <Route path="*" element={<Landing />} />

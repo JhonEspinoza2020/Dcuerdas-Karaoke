@@ -9,10 +9,8 @@ export type VideoCacheItem = {
   embed_ok?: boolean;
 };
 
-/** Si nadie busca el término en este tiempo, se puede borrar. */
+/** Tope YouTube API ToS: no retener datos de la API más de 30 días. */
 const TTL_DIAS = 30;
-/** Aunque "expire", seguimos sirviendo hasta este punto (0 cuota). */
-const STALE_DIAS = 90;
 
 export type ModoBusqueda = "musica" | "karaoke";
 
@@ -31,7 +29,7 @@ function diasDesde(fecha: Date, dias: number): Date {
   return d;
 }
 
-/** Lee caché exacta. Renueva TTL en cada acierto (canciones populares no caducan). */
+/** Lee caché exacta. Si expiró o supera 30 días desde la obtención, se borra. */
 export async function leerCacheYoutube(termino: string): Promise<VideoCacheItem[] | null> {
   const supabase = createServiceClient();
   const { data, error } = await supabase
@@ -45,19 +43,17 @@ export async function leerCacheYoutube(termino: string): Promise<VideoCacheItem[
   const ahora = new Date();
   const expira = new Date(data.expira_en);
   const creado = new Date(data.creado_en as string);
-  const limiteStale = diasDesde(creado, STALE_DIAS);
+  const limiteMax = diasDesde(creado, TTL_DIAS);
 
-  if (expira <= ahora && ahora > limiteStale) {
+  // Cumplir retención ≤30 días: no servir stale ni alargar sin reconsultar YouTube.
+  if (expira <= ahora || ahora >= limiteMax) {
     await supabase.from("youtube_cache").delete().eq("termino", termino);
     return null;
   }
 
-  // Sliding TTL: si alguien vuelve a buscar lo mismo, alarga la vida.
-  const nuevaExpira = diasDesde(ahora, TTL_DIAS).toISOString();
   await supabase
     .from("youtube_cache")
     .update({
-      expira_en: nuevaExpira,
       aciertos: (data.aciertos as number | null ?? 0) + 1,
     })
     .eq("termino", termino);
@@ -77,18 +73,23 @@ export async function buscarCacheAproximado(
   const q = termino.replace(/%/g, "").replace(/_/g, "");
   if (q.length < 3) return null;
 
+  const ahoraIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("youtube_cache")
-    .select("termino, resultados, aciertos")
+    .select("termino, resultados, aciertos, expira_en, creado_en")
     .or(`termino.ilike.%${q}%,termino.eq.${q}`)
+    .gt("expira_en", ahoraIso)
     .order("aciertos", { ascending: false })
     .limit(8);
 
   if (error || !data?.length) return null;
 
+  const ahora = new Date();
   const vistos = new Set<string>();
   const out: VideoCacheItem[] = [];
   for (const fila of data) {
+    const creado = new Date(fila.creado_en as string);
+    if (ahora >= diasDesde(creado, TTL_DIAS)) continue;
     const items = fila.resultados as VideoCacheItem[];
     for (const item of items) {
       if (vistos.has(item.video_id)) continue;

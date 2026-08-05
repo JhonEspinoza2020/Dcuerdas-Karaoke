@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { es, useAuth } from "@dcuerdas/shared";
 import { BrandLogo } from "./components/BrandLogo";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
+import { LegalLinks } from "./components/LegalLinks";
 import { QrIcon } from "./admin/AdminIcons";
 
 export function Landing() {
@@ -78,6 +79,8 @@ export function Landing() {
           {error && <div className="error-msg">{error}</div>}
         </section>
       </div>
+
+      <LegalLinks className="landing-legal" />
     </div>
   );
 }

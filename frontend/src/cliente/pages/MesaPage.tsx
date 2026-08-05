@@ -5,6 +5,7 @@ import { RegistroStep } from "../components/RegistroStep";
 import { CartaStep } from "../components/CartaStep";
 import { KaraokeStep } from "../components/KaraokeStep";
 import { BrandLogo } from "../../components/BrandLogo";
+import { LegalLinks } from "../../components/LegalLinks";
 import { MusicIcon, UtensilsIcon } from "../components/Icons";
 import {
   type ClienteDatos,
@@ -104,6 +105,7 @@ export function MesaPage() {
       <header className="header">
         <BrandLogo size="header" />
         {mesaOk && <div className="mesa-badge">Mesa {numeroMesa}</div>}
+        <LegalLinks className="mesa-legal" />
       </header>
 
       {error && <div className="error-msg">{error}</div>}

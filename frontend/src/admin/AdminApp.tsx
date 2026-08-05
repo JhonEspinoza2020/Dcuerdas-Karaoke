@@ -11,6 +11,7 @@ import { CartaPanel } from "./CartaPanel";
 import { AnunciosPanel } from "./AnunciosPanel";
 import { BrandLogo } from "../components/BrandLogo";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
+import { LegalLinks } from "../components/LegalLinks";
 import {
   DashboardIcon,
   UsersIcon,
@@ -168,6 +169,7 @@ export function AdminApp() {
           )}
 
           <Link to="/" className="admin-back-link">Volver al inicio</Link>
+          <LegalLinks className="admin-login-legal" />
         </div>
       </div>
     );
@@ -219,6 +221,7 @@ export function AdminApp() {
           <LogoutIcon size={18} />
           <span>{es.auth.cerrarSesion}</span>
         </button>
+        <LegalLinks className="admin-sidebar-legal" />
       </aside>
 
       {sidebarAbierto && (
