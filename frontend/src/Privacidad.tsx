@@ -61,7 +61,7 @@ export function Privacidad() {
 
         <h2>1. Quiénes somos</h2>
         <p>
-          Operamos un resto-bar. Esta app permite a los clientes de una mesa pedir canciones
+          Operamos un local de karaoke. Esta app permite a los clientes de una mesa pedir canciones
           (karaoke) y pedidos de carta, y al personal administrar la cola, pedidos y reproducción.
         </p>
 
