@@ -52,7 +52,7 @@ export function Privacidad() {
         <p className="legal-updated">Última actualización: 5 de agosto de 2026</p>
 
         <p>
-          Esta política describe cómo <strong>D&apos;cuerdas Resto-Bar</strong> (“nosotros”)
+          Esta política describe cómo <strong>Dcuerdas Karaoke</strong> (“nosotros”)
           recoge, usa, almacena y comparte información cuando usas la aplicación web de karaoke
           y carta disponible en{" "}
           <a href="https://dcuerdas-karaoke.vercel.app/">dcuerdas-karaoke.vercel.app</a>{" "}
@@ -197,7 +197,7 @@ export function Privacidad() {
 
         <h2>10. Contacto</h2>
         <p>
-          D&apos;cuerdas Resto-Bar
+          Dcuerdas Karaoke
           <br />
           Aplicación:{" "}
           <a href="https://dcuerdas-karaoke.vercel.app/">dcuerdas-karaoke.vercel.app</a>
@@ -219,7 +219,7 @@ export function Privacidad() {
           Volver
         </button>
         <span aria-hidden="true">·</span>
-        <span>D&apos;cuerdas Resto-Bar</span>
+        <span>Dcuerdas Karaoke</span>
       </footer>
     </div>
   );
