@@ -1,5 +1,5 @@
 /**
- * D'cuerdas Resto-Bar — Design Tokens
+ * Dcuerdas Karaoke — Design Tokens
  */
 export const dcuerdasTheme = {
   colors: {
@@ -21,7 +21,7 @@ export const dcuerdasTheme = {
   },
   branding: {
     nombre: "D'cuerdas",
-    subtitulo: "Resto-Bar",
+    subtitulo: "Karaoke",
     lema: "Ama, Come Y Bebe Que La Vida Es Breve",
     tagline: "¡A cantar se ha dicho!",
     logo: "/logo-empresa.png",

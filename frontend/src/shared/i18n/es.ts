@@ -1,10 +1,10 @@
 /**
- * Textos en español — D'cuerdas Resto-Bar
+ * Textos en español — Dcuerdas Karaoke
  */
 export const es = {
   marca: {
     nombre: "D'cuerdas",
-    subtitulo: "Resto-Bar",
+    subtitulo: "Karaoke",
     lema: "Ama, Come Y Bebe Que La Vida Es Breve",
     tagline: "Ama, come y bebe que la vida es breve",
   },
