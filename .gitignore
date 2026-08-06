@@ -28,3 +28,5 @@ frontend/node_modules/
 # Temp / Cursor
 .tmp-*
 .cursor/
+
+.vercel

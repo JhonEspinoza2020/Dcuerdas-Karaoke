@@ -7,6 +7,7 @@ import { KaraokeStep } from "../components/KaraokeStep";
 import { BrandLogo } from "../../components/BrandLogo";
 import { LegalLinks } from "../../components/LegalLinks";
 import { MusicIcon, UtensilsIcon } from "../components/Icons";
+import { marcarModoCliente } from "../../shared/clienteNav";
 import {
   type ClienteDatos,
   type Paso,
@@ -48,6 +49,11 @@ export function MesaPage() {
   useEffect(() => {
     api.karaokeEstado().then(setEstado).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!numeroMesa || !token) return;
+    marcarModoCliente(`/mesa/${numeroMesa}?t=${encodeURIComponent(token)}`);
+  }, [numeroMesa, token]);
 
   useEffect(() => {
     if (!numeroMesa || !token) {

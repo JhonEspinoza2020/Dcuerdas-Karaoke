@@ -1,19 +1,34 @@
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@dcuerdas/shared";
+import { useLocation, useNavigate } from "react-router-dom";
 import { BrandLogo } from "./components/BrandLogo";
+import { leerRutaVolver } from "./shared/clienteNav";
 
 /**
  * Política de privacidad — requerida por YouTube API Services (III.A.2e / III.A.2g).
  * URL pública: /privacidad
+ *
+ * Nunca manda a /admin por sesión de Google: el cliente del QR debe volver a su mesa.
  */
 export function Privacidad() {
   const navigate = useNavigate();
-  const { esAdmin, cargando } = useAuth();
+  const location = useLocation();
+  const fromState = (location.state as { from?: string } | null)?.from;
+  const fromGuardado = leerRutaVolver();
+  const destino = [fromState, fromGuardado].find(
+    (r) => r && r !== "/privacidad",
+  );
 
-  /** Admin → panel; cliente → pantalla anterior (mesa) o landing. */
+  /** Prioriza mesa; solo /admin si venían del panel; nunca forzar admin. */
   const volver = () => {
-    if (esAdmin) {
+    if (destino?.startsWith("/mesa/")) {
+      navigate(destino);
+      return;
+    }
+    if (destino?.startsWith("/admin")) {
       navigate("/admin");
+      return;
+    }
+    if (destino && destino !== "/") {
+      navigate(destino);
       return;
     }
     if (window.history.length > 1) {
@@ -23,19 +38,12 @@ export function Privacidad() {
     navigate("/");
   };
 
-  const etiquetaVolver = esAdmin ? "Volver al panel" : "Volver";
-
   return (
     <div className="legal-page">
       <header className="legal-page-header">
         <BrandLogo size="header" />
-        <button
-          type="button"
-          className="legal-back"
-          onClick={volver}
-          disabled={cargando}
-        >
-          {cargando ? "…" : etiquetaVolver}
+        <button type="button" className="legal-back" onClick={volver}>
+          Volver
         </button>
       </header>
 
@@ -208,7 +216,7 @@ export function Privacidad() {
 
       <footer className="legal-page-footer">
         <button type="button" className="legal-back" onClick={volver}>
-          {esAdmin ? "Panel admin" : "Inicio"}
+          Volver
         </button>
         <span aria-hidden="true">·</span>
         <span>D&apos;cuerdas Resto-Bar</span>

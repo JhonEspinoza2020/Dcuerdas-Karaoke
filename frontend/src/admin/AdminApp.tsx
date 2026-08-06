@@ -12,6 +12,7 @@ import { AnunciosPanel } from "./AnunciosPanel";
 import { BrandLogo } from "../components/BrandLogo";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { LegalLinks } from "../components/LegalLinks";
+import { limpiarModoCliente } from "../shared/clienteNav";
 import {
   DashboardIcon,
   UsersIcon,
@@ -47,6 +48,11 @@ export function AdminApp() {
   const [musicaSonando, setMusicaSonando] = useState(false);
   const [pedidosActivos, setPedidosActivos] = useState(0);
   const [colaActiva, setColaActiva] = useState(0);
+
+  // Entrar al panel a propósito: salir del modo cliente (QR).
+  useEffect(() => {
+    limpiarModoCliente();
+  }, []);
 
   const cargarPedidosBadge = useCallback(async () => {
     if (!accessToken) return;

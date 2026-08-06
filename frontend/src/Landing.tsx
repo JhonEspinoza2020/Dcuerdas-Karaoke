@@ -5,6 +5,7 @@ import { BrandLogo } from "./components/BrandLogo";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { LegalLinks } from "./components/LegalLinks";
 import { QrIcon } from "./admin/AdminIcons";
+import { enModoCliente, leerRutaVolver } from "./shared/clienteNav";
 
 export function Landing() {
   const { user, esAdmin, cargando, loginGoogle, logout } = useAuth();
@@ -13,7 +14,16 @@ export function Landing() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!cargando && user && esAdmin) {
+    if (cargando) return;
+    // QR / mesa activa: no secuestrar al panel admin aunque haya sesión Google.
+    if (enModoCliente()) {
+      const mesa = leerRutaVolver();
+      if (mesa?.startsWith("/mesa/")) {
+        navigate(mesa, { replace: true });
+      }
+      return;
+    }
+    if (user && esAdmin) {
       navigate("/admin", { replace: true });
     }
   }, [cargando, user, esAdmin, navigate]);
