@@ -92,6 +92,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const [poolSize, setPoolSize] = useState(0);
   /** Chrome bloquea unmute sin gesto en ESTA pestaña (el iframe traga los clics). */
   const [pedirGestoAudio, setPedirGestoAudio] = useState(true);
+  const audioGestoOkRef = useRef(false);
 
   const procesandoRef = useRef(false);
   const actualRef = useRef<ColaItem | null>(null);
@@ -942,10 +943,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     resumeRef.current();
     const vol = getVolumeRef.current();
     if (vol < 5) setVolumeRef.current(100);
+    audioGestoOkRef.current = true;
     setPedirGestoAudio(false);
   }, []);
 
-  // Si sigue muteado o pausado, mostrar capa (los clics al video no desbloquean solos).
+  // Solo pedir toque si aún no hubo gesto, o si está PLAYING pero muteado.
+  // Pausar (st===2) NO debe volver a mostrar la capa.
   useEffect(() => {
     if (!ready) return;
     const id = window.setInterval(() => {
@@ -954,10 +957,22 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         const muted = isMuted();
         const st = getPlayerState();
         if (st === 1 && !muted) {
+          audioGestoOkRef.current = true;
           setPedirGestoAudio(false);
           return;
         }
-        if (muted || st === 2 || st === 5 || st === -1) {
+        if (st === 2) {
+          // Pausa del usuario / YouTube: ocultar capa.
+          setPedirGestoAudio(false);
+          return;
+        }
+        if (audioGestoOkRef.current) {
+          // Tras el primer toque: solo reaparecer si suena muteado (raro).
+          setPedirGestoAudio(st === 1 && muted);
+          return;
+        }
+        // Primera vez: pedir gesto si aún no hay audio desbloqueado.
+        if (muted || st === 5 || st === -1 || st === 3) {
           setPedirGestoAudio(true);
         }
       } catch {
