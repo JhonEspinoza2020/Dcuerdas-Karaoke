@@ -38,7 +38,7 @@ function recordarYEnfocar(win: Window): Window {
   return win;
 }
 
-/** Marca unlock + avisa a la pestaña del player que debe sonar ya. */
+/** Solo para arranque / pestaña nueva: pide play al reproductor. */
 export function solicitarPlayReproductor(): void {
   try {
     localStorage.setItem(REPRO_AUDIO_UNLOCK_KEY, String(Date.now()));
@@ -48,6 +48,20 @@ export function solicitarPlayReproductor(): void {
   try {
     const ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
     ch.postMessage({ type: "play", ts: Date.now() });
+    ch.close();
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Pestaña ya abierta: solo avisar “focus”.
+ * El player NO debe reiniciar el video si ya está sonando.
+ */
+export function solicitarFocusReproductor(): void {
+  try {
+    const ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
+    ch.postMessage({ type: "focus", ts: Date.now() });
     ch.close();
   } catch {
     /* ignore */
@@ -105,16 +119,15 @@ function navegarConGesto(url: string): Window | null {
 
 /**
  * Abre el reproductor en otra pestaña.
- * Si ya está abierta, solo la enfoca (sin recargar → la música no se reinicia)
- * y pide reanudar con sonido.
+ * Si ya está abierta, solo la enfoca (sin reiniciar audio).
  */
 export function abrirReproductorVentana(): Window | null {
   const url = `${window.location.origin}${REPRODUCTOR_PATH}`;
-  solicitarPlayReproductor();
 
   try {
     if (reproWin && !reproWin.closed && mismaPantalla(reproWin)) {
-      solicitarPlayReproductor();
+      // Ya suena: solo traer al frente, sin “play” que traba el audio.
+      solicitarFocusReproductor();
       return recordarYEnfocar(reproWin);
     }
   } catch {
@@ -125,14 +138,18 @@ export function abrirReproductorVentana(): Window | null {
   try {
     win = window.open("", REPRODUCTOR_WINDOW_NAME);
   } catch {
+    solicitarPlayReproductor();
     return navegarConGesto(url);
   }
   if (!win) return null;
 
   if (mismaPantalla(win)) {
-    solicitarPlayReproductor();
+    solicitarFocusReproductor();
     return recordarYEnfocar(win);
   }
+
+  // Ventana nueva → sí pedir arranque.
+  solicitarPlayReproductor();
 
   if (esAboutBlank(win)) {
     try {

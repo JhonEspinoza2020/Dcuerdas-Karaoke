@@ -173,6 +173,12 @@ export function useYouTubePlayer(
     const p = playerRef.current;
     if (!p) return;
     try {
+      const st = p.getPlayerState?.() ?? -1;
+      // Ya sonando: no tocar (mute/play a mitad causa el “traba” al reenfocar).
+      if (st === 1) {
+        aplicarSonidoSiLibre();
+        return;
+      }
       p.mute?.();
       p.playVideo?.();
       aplicarSonidoSiLibre();

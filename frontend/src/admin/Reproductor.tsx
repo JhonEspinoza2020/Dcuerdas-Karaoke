@@ -1057,16 +1057,16 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [poolVersion, ready, iniciarRelleno, visible]);
 
-  /** Pedido desde el click de “Reproductor” / círculo: arrancar video (muted OK). */
+  /** Pedido desde el click de “Reproductor” / círculo: arrancar solo si hace falta. */
   const forzarSonidoYPlay = useCallback(() => {
     if (!ready) return;
     sesionActivaRef.current = true;
+    const st = getStateRef.current();
+    // Ya sonando: no mute/play de nuevo (eso era el trabón al re-click del círculo).
+    if (ytPlayingRef.current || st === 1) return;
+
     pausaUsuarioRef.current = false;
     desbloquearAudioAnuncio();
-    // No unMute desde otra pestaña: solo reanudar muted.
-    resumeRef.current();
-    const vol = getVolumeRef.current();
-    if (vol < 5) setVolumeRef.current(100);
 
     void (async () => {
       const reintentarVideoActual = () => {
@@ -1076,7 +1076,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           resumeRef.current();
           return;
         }
-        if (!ytPlayingRef.current) {
+        if (!ytPlayingRef.current && getStateRef.current() !== 1) {
           playRef.current(vid, 0, false);
         } else {
           resumeRef.current();
@@ -1107,14 +1107,16 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
 
-  // Click en admin → BroadcastChannel / unlock: reanudar video.
+  // Click en admin → BroadcastChannel: play solo si parado; focus = no-op si suena.
   useEffect(() => {
     if (!visible || !ready) return;
     let ch: BroadcastChannel | null = null;
     try {
       ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
       ch.onmessage = (ev) => {
-        if (ev.data?.type === "play") forzarSonidoYPlay();
+        const tipo = ev.data?.type;
+        // focus y play: solo arrancan si está parado (forzarSonidoYPlay no-op si suena).
+        if (tipo === "focus" || tipo === "play") forzarSonidoYPlay();
       };
     } catch {
       /* ignore */
