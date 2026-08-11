@@ -90,6 +90,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const [poolVersion, setPoolVersion] = useState(0);
   const [tituloAmbiente, setTituloAmbiente] = useState("");
   const [poolSize, setPoolSize] = useState(0);
+  /** Chrome bloquea unmute sin gesto en ESTA pestaña (el iframe traga los clics). */
+  const [pedirGestoAudio, setPedirGestoAudio] = useState(true);
 
   const procesandoRef = useRef(false);
   const actualRef = useRef<ColaItem | null>(null);
@@ -920,7 +922,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     emitirNowPlaying(false);
   }, [onPlayingChange, agregarAlPool, destaparRadio, emitirNowPlaying]);
 
-  const { ready, play, resume, pause, stop, mute, unMute, unlockAudio, setVolume, getVolume, getPlayerState, getCurrentTime } =
+  const { ready, play, resume, pause, stop, mute, unMute, unlockAudio, setVolume, getVolume, getPlayerState, getCurrentTime, isMuted } =
     useYouTubePlayer(onEnded, onError, handlePlayingChange);
   playRef.current = play;
   resumeRef.current = resume;
@@ -933,6 +935,37 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   getVolumeRef.current = getVolume;
   getStateRef.current = getPlayerState;
   getCurrentTimeRef.current = getCurrentTime;
+
+  const activarAudioConGesto = useCallback(() => {
+    pausaUsuarioRef.current = false;
+    unlockAudioRef.current();
+    resumeRef.current();
+    const vol = getVolumeRef.current();
+    if (vol < 5) setVolumeRef.current(100);
+    setPedirGestoAudio(false);
+  }, []);
+
+  // Si sigue muteado o pausado, mostrar capa (los clics al video no desbloquean solos).
+  useEffect(() => {
+    if (!ready) return;
+    const id = window.setInterval(() => {
+      if (!rellenoActivoRef.current && !actualRef.current) return;
+      try {
+        const muted = isMuted();
+        const st = getPlayerState();
+        if (st === 1 && !muted) {
+          setPedirGestoAudio(false);
+          return;
+        }
+        if (muted || st === 2 || st === 5 || st === -1) {
+          setPedirGestoAudio(true);
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 700);
+    return () => window.clearInterval(id);
+  }, [ready, isMuted, getPlayerState]);
 
   // Si la tapa negra se queda trabada (audio sí, video no), forzar destape.
   useEffect(() => {
@@ -1221,7 +1254,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     setSaltandoUi(true);
     limpiarPosicionRepro();
     // Gesto del admin: habilitar sonido para los siguientes temas.
-    unlockAudioRef.current();
+    activarAudioConGesto();
 
     cancelarVozRef.current();
     if (anuncioAudioRef.current) {
@@ -1342,9 +1375,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           <button
             type="button"
             onClick={() => {
-              pausaUsuarioRef.current = false;
-              unlockAudioRef.current();
-              resumeRef.current();
+              activarAudioConGesto();
               void contenedorRef.current?.requestFullscreen?.().catch(() => {});
             }}
             className="btn-primary rc-btn"
@@ -1366,6 +1397,23 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         >
           <div id="yt-player" />
         </div>
+
+        {pedirGestoAudio && (actual || relleno) && (
+          <button
+            type="button"
+            className="player-gesto-audio"
+            onClick={activarAudioConGesto}
+            onPointerDown={activarAudioConGesto}
+          >
+            <span className="player-gesto-audio-icon" aria-hidden>
+              ▶
+            </span>
+            <span className="player-gesto-audio-titulo">Toca para activar el sonido</span>
+            <span className="player-gesto-audio-sub">
+              El navegador bloquea el audio hasta un click en esta pantalla
+            </span>
+          </button>
+        )}
 
         {!actual && !relleno && (
           <div className="idle">

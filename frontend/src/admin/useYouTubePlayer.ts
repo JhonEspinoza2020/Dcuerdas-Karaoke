@@ -142,8 +142,9 @@ export function useYouTubePlayer(
   };
 
   /**
-   * Siempre mute + play. NUNCA unMute aquí: si no hay gesto, Chrome pausa
-   * y queda el ▶ rojo (parece “video malo” y antes saltaba en bucle).
+   * Siempre mute + play (autoplay fiable). El sonido solo tras gesto real
+   * en esta pestaña (capa “Toca para activar” / Saltar / pantalla completa).
+   * Los clics dentro del iframe de YouTube NO llegan a la página.
    */
   const play = (videoId: string, startSeconds = 0, _preferUnmuted = false) => {
     const p = playerRef.current;
@@ -156,12 +157,7 @@ export function useYouTubePlayer(
 
     const mutePlay = (n: number) => {
       try {
-        if (audioUnlockedRef.current) {
-          p.unMute?.();
-          if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
-        } else {
-          p.mute?.();
-        }
+        p.mute?.();
         p.playVideo?.();
       } catch {
         /* ignore */
@@ -170,13 +166,9 @@ export function useYouTubePlayer(
         try {
           const st = p.getPlayerState?.() ?? -1;
           if (st === 1 || st === 3) {
+            // Si ya hubo gesto real, subir volumen; si no, queda mute hasta la capa.
             aplicarSonidoSiLibre();
             return;
-          }
-          // Unlock pedido pero el navegador bloqueó sonido → caer a mute para que al menos corra.
-          if (audioUnlockedRef.current && n === 5) {
-            p.mute?.();
-            p.playVideo?.();
           }
           if (n < 16) mutePlay(n + 1);
         } catch {

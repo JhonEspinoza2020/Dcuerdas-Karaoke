@@ -2647,6 +2647,50 @@ a { color: inherit; }
   pointer-events: none;
 }
 
+/* Capa sobre el iframe: el click llega aquí (YouTube se come los clics del video). */
+.player-gesto-audio {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 24px;
+  border: none;
+  cursor: pointer;
+  background: rgba(8, 8, 8, 0.55);
+  color: #f5f0e8;
+  text-align: center;
+}
+.player-gesto-audio:hover {
+  background: rgba(8, 8, 8, 0.62);
+}
+.player-gesto-audio-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--accent, #e85d04);
+  color: #fff;
+  font-size: 1.75rem;
+  box-shadow: 0 8px 28px rgba(232, 93, 4, 0.45);
+}
+.player-gesto-audio-titulo {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.player-gesto-audio-sub {
+  max-width: 22rem;
+  font-size: 0.9rem;
+  color: #cfc4b8;
+  line-height: 1.35;
+}
+
 /* Las capas informativas no deben capturar clics: los controles de YouTube
    quedan accesibles debajo (pausar, mover la barra, volumen). */
 .now-playing-bar, .proximas, .watermark { pointer-events: none; }
