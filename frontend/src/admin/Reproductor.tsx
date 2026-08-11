@@ -45,7 +45,10 @@ function textoIdleAmbiente(poolVersion: number, poolSize: number): string {
  * Saltar con lock: varios clics seguidos no lanzan carreras.
  */
 const ERROR_GRACE_MS = 900;
-const RADIO_WATCHDOG_MS = 3200;
+/** Ambiente: reintentar play; no quemar temas por autoplay bloqueado. */
+const RADIO_WATCHDOG_MS = 4500;
+const RADIO_WATCHDOG_RETRY_MS = 2800;
+const RADIO_WATCHDOG_MAX_RETRIES = 12;
 /** Cola: más margen; buffering lento no debe marcar la canción como completada. */
 const COLA_WATCHDOG_MS = 12_000;
 const COLA_WATCHDOG_EXTRA_MS = 10_000;
@@ -214,16 +217,34 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     clearRadioWatchdog();
 
     const esperado = videoId;
-    const armWatchdog = (ms: number, yaExtendido: boolean) => {
+    const armWatchdog = (ms: number, reintentos: number) => {
       radioWatchdogRef.current = window.setTimeout(() => {
         if (gen !== radioGenRef.current) return;
         if (comoRadio) {
           if (!rellenoActivoRef.current) return;
           if (videoActualRadioRef.current !== esperado) return;
-          if (pausaUsuarioRef.current && yaSonabaRef.current) return;
-          // No sonó de verdad → basura + siguiente (tapa sigue hasta el próximo PLAYING).
-          bloqueadosRadioRef.current.add(esperado);
-          api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
+          // Ya sonó de verdad → no tocar (pausa del admin o fin natural).
+          if (yaSonabaRef.current) return;
+          if (pausaUsuarioRef.current) return;
+
+          const st = getStateRef.current();
+          // -1 unstarted, 2 paused, 3 buffering, 5 cued → autoplay/gesto, NO es video basura.
+          // Reintentar mute+play en lugar de “saltar y saltar”.
+          if (st === -1 || st === 2 || st === 3 || st === 5) {
+            try {
+              muteRef.current();
+              resumeRef.current();
+            } catch {
+              /* ignore */
+            }
+            if (reintentos < RADIO_WATCHDOG_MAX_RETRIES) {
+              armWatchdog(RADIO_WATCHDOG_RETRY_MS, reintentos + 1);
+            }
+            // Tras muchos reintentos: quedarse en este tema (el admin puede dar play).
+            return;
+          }
+
+          // Estado raro / error silencioso → siguiente ambiente (sin quemar por autoplay).
           radioErrorLockRef.current = false;
           const pendiente = colaRef.current.find(
             (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
@@ -242,6 +263,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             return;
           }
           setError("");
+          // Solo marcar bloqueado si agotamos reintentos en estado no-reproducible.
+          bloqueadosRadioRef.current.add(esperado);
+          api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
           iniciarRellenoRef.current();
           return;
         }
@@ -251,10 +275,20 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         if (pausaUsuarioRef.current && yaSonabaRef.current) return;
         // No saltar pedidos mientras suena saludo/anuncio (TTS puede pausar YT un momento).
         if (saludoActivoRef.current || anuncioReproduciendoRef.current) return;
-        // Si sigue cargando, dar otra chance (no marcar completada aún).
         const st = getStateRef.current();
-        if (!yaExtendido && (st === 3 || st === -1 || st === 5)) {
-          armWatchdog(COLA_WATCHDOG_EXTRA_MS, true);
+        // Autoplay/gesto o buffering: reintentar, no completar.
+        if (st === 3 || st === -1 || st === 5 || st === 2) {
+          try {
+            muteRef.current();
+            resumeRef.current();
+          } catch {
+            /* ignore */
+          }
+          if (reintentos < 3) {
+            armWatchdog(COLA_WATCHDOG_EXTRA_MS, reintentos + 1);
+            return;
+          }
+          // Sigue esperando gesto: no marcar completada.
           return;
         }
         api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_cola").catch(() => {});
@@ -262,7 +296,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         completarRef.current(actual.id);
       }, ms);
     };
-    armWatchdog(comoRadio ? RADIO_WATCHDOG_MS : COLA_WATCHDOG_MS, false);
+    armWatchdog(comoRadio ? RADIO_WATCHDOG_MS : COLA_WATCHDOG_MS, 0);
   }, [clearRadioWatchdog]);
 
   const agregarAlPool = useCallback((videoId: string, titulo?: string) => {
@@ -1006,7 +1040,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [poolVersion, ready, iniciarRelleno, visible]);
 
-  /** Pedido desde el click de “Reproductor” en el admin: sonar sin segundo click. */
+  /** Pedido desde el click de “Reproductor” / círculo: sonar sin segundo click. */
   const forzarSonidoYPlay = useCallback(() => {
     if (!ready) return;
     sesionActivaRef.current = true;
@@ -1018,31 +1052,43 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     if (vol < 5) setVolumeRef.current(100);
 
     void (async () => {
-      if (hayPedidoEnCola()) {
-        // El efecto de cola encola; mientras tanto reanudar si ya hay video.
-        resumeRef.current();
+      const reintentarVideoActual = () => {
+        const vid =
+          actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
+        if (!vid) {
+          resumeRef.current();
+          unMuteRef.current();
+          return;
+        }
+        // Si quedó con el ▶ de YouTube, reload muted suele arrancar mejor que solo resume.
+        if (!ytPlayingRef.current) {
+          playRef.current(vid, 0, false);
+        } else {
+          resumeRef.current();
+        }
         unMuteRef.current();
+      };
+
+      if (hayPedidoEnCola()) {
+        reintentarVideoActual();
         return;
       }
       if (actualRef.current || rellenoActivoRef.current) {
-        resumeRef.current();
-        unMuteRef.current();
+        reintentarVideoActual();
         return;
       }
       if (poolRadioRef.current.length === 0) {
         await cargarPoolRadio();
       }
       if (hayPedidoEnCola() || actualRef.current) {
-        resumeRef.current();
-        unMuteRef.current();
+        reintentarVideoActual();
         return;
       }
       if (!rellenoActivoRef.current) {
         radioArrancadaRef.current = false;
         iniciarRelleno();
       } else {
-        resumeRef.current();
-        unMuteRef.current();
+        reintentarVideoActual();
       }
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
