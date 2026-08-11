@@ -44,7 +44,7 @@ export type LimiteCola = {
   restantes_persona?: number;
 };
 
-export type TipoZona = "mesa" | "karaoke";
+export type TipoZona = "mesa" | "karaoke" | "local";
 
 export type MesaInfo = {
   mesa_id: number;

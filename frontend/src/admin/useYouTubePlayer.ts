@@ -108,11 +108,14 @@ export function useYouTubePlayer(
     };
   }, []);
 
-  const play = (videoId: string) => {
+  const play = (videoId: string, startSeconds = 0) => {
     const p = playerRef.current;
     if (!p?.loadVideoById) return;
-    // string simple: más compatible que el objeto
-    p.loadVideoById(videoId);
+    if (startSeconds > 1) {
+      p.loadVideoById({ videoId, startSeconds });
+    } else {
+      p.loadVideoById(videoId);
+    }
     window.setTimeout(() => {
       try {
         // Mute primero: el autoplay del navegador suele permitir muted y luego subimos volumen.
@@ -164,5 +167,25 @@ export function useYouTubePlayer(
 
   const getPlayerState = () => playerRef.current?.getPlayerState?.() ?? -1;
 
-  return { ready, play, resume, pause, stop, mute, unMute, setVolume, getVolume, getPlayerState };
+  const getCurrentTime = () => {
+    try {
+      return playerRef.current?.getCurrentTime?.() ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  return {
+    ready,
+    play,
+    resume,
+    pause,
+    stop,
+    mute,
+    unMute,
+    setVolume,
+    getVolume,
+    getPlayerState,
+    getCurrentTime,
+  };
 }

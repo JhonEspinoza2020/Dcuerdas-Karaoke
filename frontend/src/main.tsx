@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { initSentry, Sentry } from "./sentry";
 import { MesaPage } from "./cliente/pages/MesaPage";
 import { AdminApp } from "./admin/AdminApp";
+import { PantallaReproductor } from "./admin/PantallaReproductor";
 import { Landing } from "./Landing";
 import { Privacidad } from "./Privacidad";
 import "./index.css";
@@ -29,6 +30,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/" element={<Landing />} />
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/mesa/:numero" element={<MesaPage />} />
+          <Route path="/admin/pantalla" element={<PantallaReproductor />} />
           <Route path="/admin" element={<AdminApp />} />
           <Route path="*" element={<Landing />} />
         </SentryRoutes>

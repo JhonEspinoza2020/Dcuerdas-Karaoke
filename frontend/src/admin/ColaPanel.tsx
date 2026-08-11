@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, supabase, type ColaItem } from "@dcuerdas/shared";
+import { api, supabase, metaCola, type ColaItem } from "@dcuerdas/shared";
 import { PlayIcon } from "../cliente/components/Icons";
 
 type Props = {
@@ -108,12 +108,12 @@ export function ColaPanel({ accessToken, onCountChange }: Props) {
                   </span>
                   <span className="cola-cancion">{c.titulo_cancion}</span>
                   <span className="cola-meta">
-                    {c.nombre_cliente} · {c.etiqueta ?? `Mesa ${c.numero_mesa}`}
+                    {metaCola(c)}
                     {" · "}
                     {textoEspera(c.creado_en, ahora)}
                   </span>
                 </div>
-                <button className="btn-secondary cola-quitar" onClick={() => quitar(c.id)}>
+                <button type="button" className="btn-secondary cola-quitar" onClick={() => quitar(c.id)}>
                   Quitar
                 </button>
               </div>

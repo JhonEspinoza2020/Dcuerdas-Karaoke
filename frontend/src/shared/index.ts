@@ -43,3 +43,4 @@ export type {
   CategoriaAdmin,
 } from "./api/admin";
 export type { CategoriaCarta, Plato } from "./api/carta";
+export { zonaCola, metaCola } from "./colaEtiqueta";

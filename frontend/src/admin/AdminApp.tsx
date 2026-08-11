@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi, api, es, supabase, useAuth } from "@dcuerdas/shared";
-import { Reproductor } from "./Reproductor";
 import { ColaPanel } from "./ColaPanel";
 import { QRsPanel } from "./QRsPanel";
 import { DashboardPanel } from "./DashboardPanel";
@@ -13,6 +12,8 @@ import { BrandLogo } from "../components/BrandLogo";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { LegalLinks } from "../components/LegalLinks";
 import { limpiarModoCliente } from "../shared/clienteNav";
+import { abrirReproductorVentana } from "./abrirReproductorVentana";
+import { ReproductorBubble, mostrarReproductorBubble } from "./ReproductorBubble";
 import {
   DashboardIcon,
   UsersIcon,
@@ -26,9 +27,9 @@ import {
   MegaphoneIcon,
 } from "./AdminIcons";
 
-type Tab = "dashboard" | "clientes" | "pedidos" | "carta" | "anuncios" | "cola" | "reproductor" | "qrs";
+type Tab = "dashboard" | "clientes" | "pedidos" | "carta" | "anuncios" | "cola" | "qrs";
 
-const NAV: { id: Tab; label: string; icon: typeof DashboardIcon }[] = [
+const NAV: { id: Tab | "reproductor"; label: string; icon: typeof DashboardIcon }[] = [
   { id: "dashboard", label: "Resumen", icon: DashboardIcon },
   { id: "pedidos", label: "Pedidos", icon: OrderIcon },
   { id: "cola", label: "Cola", icon: QueueIcon },
@@ -40,7 +41,8 @@ const NAV: { id: Tab; label: string; icon: typeof DashboardIcon }[] = [
 ];
 
 export function AdminApp() {
-  const { user, esAdmin, cargando, accessToken, loginGoogle, logout, perfil } = useAuth();
+  const { user, esAdmin, cargando, accessToken, loginGoogle, logout, perfil } =
+    useAuth();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [error, setError] = useState("");
   const [logueando, setLogueando] = useState(false);
@@ -49,7 +51,6 @@ export function AdminApp() {
   const [pedidosActivos, setPedidosActivos] = useState(0);
   const [colaActiva, setColaActiva] = useState(0);
 
-  // Entrar al panel a propósito: salir del modo cliente (QR).
   useEffect(() => {
     limpiarModoCliente();
   }, []);
@@ -64,7 +65,7 @@ export function AdminApp() {
       ).length;
       setPedidosActivos(n);
     } catch {
-      /* silencioso: el badge no debe romper el panel */
+      /* silencioso */
     }
   }, [accessToken]);
 
@@ -133,7 +134,13 @@ export function AdminApp() {
     setTab("dashboard");
   };
 
-  const irA = (id: Tab) => {
+  const irA = (id: Tab | "reproductor") => {
+    if (id === "reproductor") {
+      mostrarReproductorBubble();
+      abrirReproductorVentana();
+      setSidebarAbierto(false);
+      return;
+    }
     setTab(id);
     setSidebarAbierto(false);
   };
@@ -174,7 +181,9 @@ export function AdminApp() {
             </button>
           )}
 
-          <Link to="/" className="admin-back-link">Volver al inicio</Link>
+          <Link to="/" className="admin-back-link">
+            Volver al inicio
+          </Link>
           <LegalLinks className="admin-login-legal" />
         </div>
       </div>
@@ -198,11 +207,12 @@ export function AdminApp() {
             let badge = 0;
             if (id === "pedidos") badge = pedidosActivos;
             else if (id === "cola") badge = colaActiva;
+            const activo = id !== "reproductor" && tab === id;
             return (
               <button
                 key={id}
                 type="button"
-                className={tab === id ? "active" : ""}
+                className={activo ? "active" : ""}
                 onClick={() => irA(id)}
               >
                 <span className="admin-nav-icon-wrap">
@@ -254,12 +264,13 @@ export function AdminApp() {
           </span>
         </header>
 
-        <main
-          className="admin-content"
-          style={{ display: tab === "reproductor" ? "none" : undefined }}
-          aria-hidden={tab === "reproductor"}
-        >
-          {tab === "dashboard" && <DashboardPanel accessToken={accessToken} />}
+        <main className="admin-content">
+          {tab === "dashboard" && (
+            <DashboardPanel
+              accessToken={accessToken}
+              onAbrirCola={() => setTab("cola")}
+            />
+          )}
           {tab === "clientes" && <ClientesPanel accessToken={accessToken} />}
           {tab === "pedidos" && (
             <PedidosPanel
@@ -277,19 +288,9 @@ export function AdminApp() {
           )}
           {tab === "qrs" && <QRsPanel accessToken={accessToken} />}
         </main>
-        <div
-          className={
-            tab === "reproductor" ? "admin-content" : "repro-persist--hidden"
-          }
-          aria-hidden={tab !== "reproductor"}
-        >
-          <Reproductor
-            accessToken={accessToken}
-            visible={tab === "reproductor"}
-            onPlayingChange={setMusicaSonando}
-          />
-        </div>
       </div>
+
+      <ReproductorBubble accessToken={accessToken} onPlayingChange={setMusicaSonando} />
     </div>
   );
 }

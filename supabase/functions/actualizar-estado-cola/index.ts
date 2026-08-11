@@ -29,12 +29,16 @@ Deno.serve(async (req) => {
     if (error) throw error;
     if (!data) return errorResponse("no_encontrada", "Canción no encontrada.", 404);
 
+    const tipo = data.mesas?.tipo ?? "mesa";
+    const esLocal = tipo === "local";
     return jsonResponse({
       id: data.id,
       mesa_id: data.mesa_id,
       numero_mesa: data.mesas?.numero_mesa,
-      tipo: data.mesas?.tipo ?? "mesa",
-      etiqueta: data.mesas?.etiqueta ?? `Mesa ${data.mesas?.numero_mesa}`,
+      tipo,
+      etiqueta: esLocal
+        ? "Local"
+        : (data.mesas?.etiqueta ?? `Mesa ${data.mesas?.numero_mesa}`),
       youtube_video_id: data.youtube_video_id,
       titulo_cancion: data.titulo_cancion,
       nombre_cliente: data.nombre_cliente,

@@ -4,7 +4,7 @@ import { createServiceClient } from "../_shared/supabase.ts";
 import { videoEsReproducible } from "../_shared/youtube_embed.ts";
 import { pickYoutubeApiKey } from "../_shared/youtube_keys.ts";
 
-/** Admin encola sin límite de mesa ni rate limit de canciones. */
+/** Admin encola en zona Local (no consume cupo de mesas de clientes). */
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -33,14 +33,19 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
     const { data: mesa, error: mesaErr } = await supabase
       .from("mesas")
-      .select("id, numero_mesa")
+      .select("id, numero_mesa, etiqueta, tipo")
+      .eq("tipo", "local")
       .eq("activa", true)
       .order("numero_mesa")
       .limit(1)
       .maybeSingle();
 
     if (mesaErr || !mesa) {
-      return errorResponse("mesa_no_encontrada", "No hay mesas activas para encolar.", 404);
+      return errorResponse(
+        "mesa_local_no_encontrada",
+        "Falta la zona Local del admin. Aplica la migración mesa_local_admin.",
+        404,
+      );
     }
 
     const { data: cancion, error } = await supabase
@@ -79,8 +84,8 @@ Deno.serve(async (req) => {
       estado: cancion.estado,
       creado_en: cancion.creado_en,
       posicion: totalPendientes ?? 1,
-      etiqueta: m?.etiqueta ?? "Local",
-      tipo: m?.tipo ?? "mesa",
+      etiqueta: "Local",
+      tipo: "local",
     }, 201);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "error";

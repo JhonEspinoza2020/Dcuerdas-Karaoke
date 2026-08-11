@@ -12,7 +12,11 @@ interface ImportMeta {
 }
 
 interface YTPlayer {
-  loadVideoById(videoId: string): void;
+  loadVideoById(
+    videoIdOrOptions:
+      | string
+      | { videoId: string; startSeconds?: number; endSeconds?: number },
+  ): void;
   loadPlaylist(
     playlistOrOptions: string[] | { list: string; listType: string; index?: number },
     index?: number,
@@ -23,6 +27,8 @@ interface YTPlayer {
   playVideo(): void;
   mute(): void;
   unMute(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
   getPlayerState(): number;
   setShuffle(shufflePlaylist: boolean): void;
   setLoop(loopPlaylist: boolean): void;

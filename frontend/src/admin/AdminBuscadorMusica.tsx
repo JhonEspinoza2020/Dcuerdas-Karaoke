@@ -38,12 +38,31 @@ export function AdminBuscadorMusica({ accessToken }: Props) {
 
   useEffect(() => {
     if (!abierto) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!panelRef.current?.contains(e.target as Node)) setAbierto(false);
+    const cerrar = () => {
+      detenerVozRef.current?.();
+      setEscuchando(false);
+      setAbierto(false);
     };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    const onDoc = (e: PointerEvent) => {
+      if (!panelRef.current?.contains(e.target as Node)) cerrar();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cerrar();
+    };
+    // capture: por si algún overlay interno detiene el bubbling
+    document.addEventListener("pointerdown", onDoc, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDoc, true);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [abierto]);
+
+  const cerrarBuscador = useCallback(() => {
+    detenerVozRef.current?.();
+    setEscuchando(false);
+    setAbierto(false);
+  }, []);
 
   // Solo depende de `query`: reabrir la lupa NO dispara otra búsqueda.
   useEffect(() => {
@@ -141,81 +160,92 @@ export function AdminBuscadorMusica({ accessToken }: Props) {
   };
 
   return (
-    <div className="admin-buscador-wrap" ref={panelRef}>
-      <button
-        type="button"
-        className={`btn-secondary rc-btn admin-buscador-lupa ${abierto ? "is-open" : ""}`}
-        aria-label="Buscar música"
-        aria-expanded={abierto}
-        onClick={() => {
-          setOkMsg("");
-          setError("");
-          setAbierto((a) => !a);
-        }}
-      >
-        <SearchIcon size={18} />
-      </button>
-
+    <>
+      {/* Cubre el iframe de YouTube: sin esto, el click en el video no llega al document. */}
       {abierto && (
-        <div className="admin-buscador-popover" role="dialog" aria-label="Buscar música">
-          <div className="admin-buscador-input-row">
-            <input
-              ref={inputRef}
-              className="admin-buscador-input"
-              placeholder="Canción o artista…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button
-              type="button"
-              className={`voice-search-btn admin-voice-btn ${escuchando ? "is-listening" : ""}`}
-              aria-label={escuchando ? "Detener búsqueda por voz" : "Buscar por voz"}
-              onClick={buscarPorVoz}
-            >
-              <MicIcon size={18} />
-            </button>
-          </div>
-          {esperando && <p className="search-hint">Cuando dejes de escribir…</p>}
-          {buscando && <p className="search-hint">Buscando…</p>}
-          {error && <div className="error-msg">{error}</div>}
-          {okMsg && <p className="admin-buscador-ok">{okMsg}</p>}
-
-          <div className="admin-buscador-lista">
-            {resultados.length > 0 && <YoutubeAttribution soloMarca />}
-            {resultados.map((v) => {
-              const malo = bloqueados.has(v.video_id);
-              let etiquetaBtn = malo ? "No" : "Añadir";
-              if (enviando === v.video_id) etiquetaBtn = "…";
-              return (
-                <div
-                  key={v.video_id}
-                  className={`admin-buscador-item ${malo ? "is-blocked" : ""}`}
-                >
-                  {v.miniatura_url ? (
-                    <img src={v.miniatura_url} alt="" width={120} height={70} />
-                  ) : (
-                    <div className="admin-buscador-ph" />
-                  )}
-                  <div className="admin-buscador-info">
-                    <div className="admin-buscador-cancion">{v.titulo}</div>
-                    {v.canal && <div className="admin-buscador-canal">{v.canal}</div>}
-                    {malo && <div className="admin-buscador-canal">No reproducible aquí</div>}
-                    <YoutubeAttribution videoId={v.video_id} />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-primary rc-btn"
-                    disabled={malo || enviando === v.video_id}
-                    onClick={() => encolar(v)}
-                  >
-                    {etiquetaBtn}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <button
+          type="button"
+          className="admin-buscador-backdrop"
+          aria-label="Cerrar búsqueda"
+          onClick={cerrarBuscador}
+        />
       )}
-    </div>
+      <div className={`admin-buscador-wrap${abierto ? " is-open" : ""}`} ref={panelRef}>
+        <button
+          type="button"
+          className={`btn-secondary rc-btn admin-buscador-lupa ${abierto ? "is-open" : ""}`}
+          aria-label="Buscar música"
+          aria-expanded={abierto}
+          onClick={() => {
+            setOkMsg("");
+            setError("");
+            setAbierto((a) => !a);
+          }}
+        >
+          <SearchIcon size={18} />
+        </button>
+
+        {abierto && (
+          <div className="admin-buscador-popover" role="dialog" aria-label="Buscar música">
+            <div className="admin-buscador-input-row">
+              <input
+                ref={inputRef}
+                className="admin-buscador-input"
+                placeholder="Canción o artista…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <button
+                type="button"
+                className={`voice-search-btn admin-voice-btn ${escuchando ? "is-listening" : ""}`}
+                aria-label={escuchando ? "Detener búsqueda por voz" : "Buscar por voz"}
+                onClick={buscarPorVoz}
+              >
+                <MicIcon size={18} />
+              </button>
+            </div>
+            {esperando && <p className="search-hint">Cuando dejes de escribir…</p>}
+            {buscando && <p className="search-hint">Buscando…</p>}
+            {error && <div className="error-msg">{error}</div>}
+            {okMsg && <p className="admin-buscador-ok">{okMsg}</p>}
+
+            <div className="admin-buscador-lista">
+              {resultados.length > 0 && <YoutubeAttribution soloMarca />}
+              {resultados.map((v) => {
+                const malo = bloqueados.has(v.video_id);
+                let etiquetaBtn = malo ? "No" : "Añadir";
+                if (enviando === v.video_id) etiquetaBtn = "…";
+                return (
+                  <div
+                    key={v.video_id}
+                    className={`admin-buscador-item ${malo ? "is-blocked" : ""}`}
+                  >
+                    {v.miniatura_url ? (
+                      <img src={v.miniatura_url} alt="" width={120} height={70} />
+                    ) : (
+                      <div className="admin-buscador-ph" />
+                    )}
+                    <div className="admin-buscador-info">
+                      <div className="admin-buscador-cancion">{v.titulo}</div>
+                      {v.canal && <div className="admin-buscador-canal">{v.canal}</div>}
+                      {malo && <div className="admin-buscador-canal">No reproducible aquí</div>}
+                      <YoutubeAttribution videoId={v.video_id} />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary rc-btn"
+                      disabled={malo || enviando === v.video_id}
+                      onClick={() => encolar(v)}
+                    >
+                      {etiquetaBtn}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

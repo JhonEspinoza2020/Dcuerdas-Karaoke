@@ -18,21 +18,27 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    const canciones = (data ?? []).map((c, idx) => ({
-      id: c.id,
-      mesa_id: c.mesa_id,
-      numero_mesa: c.mesas?.numero_mesa,
-      tipo: c.mesas?.tipo ?? "mesa",
-      etiqueta: c.mesas?.etiqueta ?? `Mesa ${c.mesas?.numero_mesa}`,
-      youtube_video_id: c.youtube_video_id,
-      titulo_cancion: c.titulo_cancion,
-      nombre_cliente: c.nombre_cliente,
-      saludo: c.saludo,
-      saludo_momento: c.saludo_momento ?? "inicio",
-      estado: c.estado,
-      creado_en: c.creado_en,
-      posicion: idx + 1,
-    }));
+    const canciones = (data ?? []).map((c, idx) => {
+      const tipo = c.mesas?.tipo ?? "mesa";
+      const esLocal = tipo === "local";
+      return {
+        id: c.id,
+        mesa_id: c.mesa_id,
+        numero_mesa: c.mesas?.numero_mesa,
+        tipo,
+        etiqueta: esLocal
+          ? "Local"
+          : (c.mesas?.etiqueta ?? `Mesa ${c.mesas?.numero_mesa}`),
+        youtube_video_id: c.youtube_video_id,
+        titulo_cancion: c.titulo_cancion,
+        nombre_cliente: c.nombre_cliente,
+        saludo: c.saludo,
+        saludo_momento: c.saludo_momento ?? "inicio",
+        estado: c.estado,
+        creado_en: c.creado_en,
+        posicion: idx + 1,
+      };
+    });
 
     return jsonResponse(canciones);
   } catch (e) {

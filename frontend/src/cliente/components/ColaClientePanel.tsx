@@ -18,7 +18,10 @@ type Props = {
   compacto?: boolean;
 };
 
-export function etiquetaMesa(item: Pick<ColaPublicaItem, "numero_mesa" | "etiqueta">): string {
+export function etiquetaMesa(
+  item: Pick<ColaPublicaItem, "numero_mesa" | "etiqueta" | "tipo">,
+): string {
+  if (item.tipo === "local" || item.etiqueta === "Local") return "Local";
   return item.etiqueta ?? `Mesa ${item.numero_mesa}`;
 }
 
