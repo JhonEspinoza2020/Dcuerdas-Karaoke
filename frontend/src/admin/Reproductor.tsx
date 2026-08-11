@@ -20,7 +20,6 @@ import {
 import {
   REPRO_CMD_CHANNEL,
   consumirUnlockAudioReciente,
-  hayUnlockAudioReciente,
 } from "./abrirReproductorVentana";
 
 type Props = {
@@ -205,14 +204,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     const gen = ++radioGenRef.current;
     ignoreErrorUntilRef.current = Date.now() + ERROR_GRACE_MS;
     yaSonabaRef.current = false;
-    if (comoRadio) {
-      radioCubiertoRef.current = true;
-      setRadioCubierto(true);
-    }
+    // Sin tapa negra: el iframe de YouTube debe verse desde el primer frame.
+    radioCubiertoRef.current = false;
+    setRadioCubierto(false);
     // Solo reanudar tras recarga real de la pestaña (no en cada tema de cola/ambiente).
     const desde = consumirPosicionTrasRecarga(videoId) ?? 0;
-    // Tras click en “Reproductor” intentar sonido ya (sin esperar pantalla completa).
-    playRef.current(videoId, desde > 2 ? desde : 0, hayUnlockAudioReciente());
+    // Siempre arrancar muted (autoplay del navegador); el unmute va al PLAYING / gesto.
+    playRef.current(videoId, desde > 2 ? desde : 0, false);
     clearRadioWatchdog();
 
     const esperado = videoId;
@@ -796,8 +794,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     }
     clearRadioWatchdog();
     setError("");
-    radioCubiertoRef.current = true;
-    setRadioCubierto(true);
+    radioCubiertoRef.current = false;
+    setRadioCubierto(false);
     if (hayPedidoEnCola()) {
       const pendiente = primerPendienteCola();
       rellenoActivoRef.current = false;
@@ -1156,12 +1154,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     setError("");
     saludoActivoRef.current = false;
 
-    // Tapa/mute solo al saltar ambiente (no pedidos de mesa ni saludo).
+    // Al saltar ambiente: mute breve sin tapa negra (el video debe seguir visible).
     const saltandoAmbiente =
       !actualRef.current && (rellenoActivoRef.current || !!videoActualRadioRef.current);
     if (saltandoAmbiente) {
-      radioCubiertoRef.current = true;
-      setRadioCubierto(true);
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
       muteRef.current();
     }
 
@@ -1276,19 +1274,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         <div
           className="player-wrap"
           style={{
-            visibility: actual || relleno || radioCubierto ? "visible" : "hidden",
+            visibility: actual || relleno ? "visible" : "hidden",
           }}
         >
           <div id="yt-player" />
         </div>
 
-        {radioCubierto && (
-          <div className="player-cover" aria-live="polite">
-            <BrandLogo size="nav" />
-          </div>
-        )}
-
-        {!actual && !relleno && !radioCubierto && (
+        {!actual && !relleno && (
           <div className="idle">
             <BrandLogo size="hero" className="idle-logo" />
             <p className="lema">{es.marca.lema}</p>
@@ -1298,7 +1290,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           </div>
         )}
 
-        {relleno && !actual && !radioCubierto && (
+        {relleno && !actual && (
           <div className="radio-badge">
             <span className="radio-badge-punto" />
             <div className="radio-badge-texto">

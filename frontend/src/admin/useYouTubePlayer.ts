@@ -124,10 +124,10 @@ export function useYouTubePlayer(
   };
 
   /**
-   * @param preferUnmuted intentar sonido de una vez (p. ej. tras click “Reproductor”).
-   * Si el navegador lo bloquea, cae a mute+play y reintenta unmute.
+   * Arranca siempre en mute (autoplay permitido por el navegador) y luego
+   * intenta sonido. Así el video se ve sin click; el audio llega al PLAYING o al gesto.
    */
-  const play = (videoId: string, startSeconds = 0, preferUnmuted = false) => {
+  const play = (videoId: string, startSeconds = 0, _preferUnmuted = false) => {
     const p = playerRef.current;
     if (!p?.loadVideoById) return;
     if (startSeconds > 1) {
@@ -147,37 +147,19 @@ export function useYouTubePlayer(
         try {
           const st = p.getPlayerState?.() ?? -1;
           if (st === 1 || st === 3) {
-            // Tras PLAYING muted, pedir sonido (a veces el navegador lo concede).
             p.unMute?.();
             if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+            // Si sigue muteado (política del navegador), el gesto en la página lo libera.
             return;
           }
-          if (n < 12) mutePlay(n + 1);
+          if (n < 14) mutePlay(n + 1);
         } catch {
-          if (n < 12) mutePlay(n + 1);
+          if (n < 14) mutePlay(n + 1);
         }
-      }, 90 + n * 70);
+      }, 80 + n * 60);
     };
 
-    window.setTimeout(() => {
-      if (preferUnmuted) {
-        try {
-          p.unMute?.();
-          p.setVolume?.(100);
-          p.playVideo?.();
-        } catch {
-          /* ignore */
-        }
-        window.setTimeout(() => {
-          const st = p.getPlayerState?.() ?? -1;
-          const muted = p.isMuted?.() ?? true;
-          if (st === 1 && !muted) return;
-          mutePlay(0);
-        }, 220);
-        return;
-      }
-      mutePlay(0);
-    }, 40);
+    window.setTimeout(() => mutePlay(0), 30);
   };
 
   const resume = () => {
