@@ -97,13 +97,15 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const ignoreErrorUntilRef = useRef(0);
   /** Solo true cuando YouTube reporta PLAYING real. */
   const ytPlayingRef = useRef(false);
+  const tituloAmbienteRef = useRef("");
+  tituloAmbienteRef.current = tituloAmbiente;
 
   const emitirNowPlaying = useCallback((playing: boolean) => {
     if (rellenoActivoRef.current && !actualRef.current) {
       publicarNowPlaying({
         playing,
         youtube_video_id: videoActualRadioRef.current,
-        titulo: tituloAmbiente || "Ambiente",
+        titulo: tituloAmbienteRef.current || "Música de ambiente",
         nombre_cliente: "",
         numero_mesa: null,
         esAmbiente: true,
@@ -111,13 +113,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
     publicarNowPlaying(payloadDesdeCola(actualRef.current, { playing }));
-  }, [tituloAmbiente]);
+  }, []);
 
   useEffect(() => {
     emitirNowPlaying(ytPlayingRef.current);
   }, [actual, relleno, tituloAmbiente, emitirNowPlaying]);
 
-  // Heartbeat cada 1s: si cierran esta pestaña, el panel deja de animar las ondas.
+  // Heartbeat estable: no reiniciar al cambiar el título (evita parpadeo de ondas).
   useEffect(() => {
     return iniciarHeartbeatNowPlaying(() => {
       const playing = ytPlayingRef.current;
@@ -125,7 +127,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         return {
           playing,
           youtube_video_id: videoActualRadioRef.current,
-          titulo: tituloAmbiente || "Ambiente",
+          titulo: tituloAmbienteRef.current || "Música de ambiente",
           nombre_cliente: "",
           numero_mesa: null,
           esAmbiente: true,
@@ -133,7 +135,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       }
       return payloadDesdeCola(actualRef.current, { playing });
     });
-  }, [tituloAmbiente]);
+  }, []);
 
   const radioWatchdogRef = useRef<number | undefined>(undefined);
   const titulosPoolRef = useRef<Map<string, string>>(new Map());
@@ -412,7 +414,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     radioArrancadaRef.current = true;
     setRelleno(true);
     setActual(null);
-    setTituloAmbiente(titulosPoolRef.current.get(id) ?? "");
+    const titulo = titulosPoolRef.current.get(id) ?? "";
+    tituloAmbienteRef.current = titulo;
+    setTituloAmbiente(titulo);
     videoActualRadioRef.current = id;
     playVideo(id, true);
   }, [playVideo, programarReintentoRadio]);

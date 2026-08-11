@@ -4,6 +4,7 @@ import { StarIcon, ClockIcon, UsersIcon, QueueIcon, FlameIcon } from "./AdminIco
 import { abrirReproductorVentana } from "./abrirReproductorVentana";
 import { mostrarReproductorBubble } from "./ReproductorBubble";
 import {
+  estaPlayingEnVivo,
   miniaturaYoutube,
   suscribirNowPlaying,
   type NowPlayingPayload,
@@ -75,6 +76,7 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
   const [cola, setCola] = useState<ColaItem[]>([]);
   const [ahoraReloj, setAhoraReloj] = useState(fechaHoraAhora);
   const [nowLive, setNowLive] = useState<NowPlayingPayload | null>(null);
+  const [, setTick] = useState(0);
 
   const cargar = useCallback(async () => {
     try {
@@ -109,10 +111,12 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, cargar)
       .subscribe();
     const clock = window.setInterval(() => setAhoraReloj(fechaHoraAhora()), 30_000);
+    const tick = window.setInterval(() => setTick((n) => n + 1), 1000);
     return () => {
       unsubNow();
       supabase.removeChannel(ch);
       window.clearInterval(clock);
+      window.clearInterval(tick);
     };
   }, [cargar, cargarCola]);
 
@@ -135,11 +139,7 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
     .slice(0, 5);
 
   // Lo que suena de verdad en la pestaña Reproductor (cola o ambiente).
-  const heartbeatOk =
-    !!nowLive?.youtube_video_id &&
-    nowLive.ts != null &&
-    Date.now() - nowLive.ts <= 4000;
-  const liveActivo = heartbeatOk;
+  const liveActivo = estaPlayingEnVivo(nowLive);
   const ahora = liveActivo
     ? {
         videoId: nowLive!.youtube_video_id!,
@@ -244,7 +244,7 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
                       <span className="dash-next-nombre">
                         {c.nombre_cliente === zonaCola(c) ? zonaCola(c) : c.nombre_cliente}
                       </span>
-                      <span className="dash-next-cancion">{c.titulo_cancion}</span>
+                      <span className="dash-next-cancion">{decodeHtml(c.titulo_cancion)}</span>
                     </div>
                     {c.nombre_cliente !== zonaCola(c) && (
                       <span className="dash-next-mesa">{zonaCola(c)}</span>

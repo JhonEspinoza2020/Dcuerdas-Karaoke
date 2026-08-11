@@ -48,22 +48,21 @@ export function ReproductorBubble({ accessToken, onPlayingChange }: Props) {
       const data = await api.colaActiva(accessToken);
       if (!Array.isArray(data)) return;
       const actual =
-        data.find((c: ColaItem) => c.estado === "reproduciendo") ??
-        data.find((c: ColaItem) => c.estado === "pendiente") ??
-        null;
-      if (!actual) {
-        setNow((prev) => (estaPlayingEnVivo(prev) ? prev : null));
-        return;
-      }
-      setNow((prev) => ({
-        playing: estaPlayingEnVivo(prev),
-        ts: prev?.ts,
-        youtube_video_id: actual.youtube_video_id,
-        titulo: actual.titulo_cancion,
-        nombre_cliente: actual.nombre_cliente,
-        numero_mesa: actual.numero_mesa,
-        esAmbiente: false,
-      }));
+        data.find((c: ColaItem) => c.estado === "reproduciendo") ?? null;
+      setNow((prev) => {
+        // Si el player está vivo (ambiente o canción), no pisar con la cola.
+        if (estaPlayingEnVivo(prev)) return prev;
+        if (!actual) return prev?.esAmbiente ? prev : null;
+        return {
+          playing: false,
+          ts: prev?.ts,
+          youtube_video_id: actual.youtube_video_id,
+          titulo: actual.titulo_cancion,
+          nombre_cliente: actual.nombre_cliente,
+          numero_mesa: actual.numero_mesa,
+          esAmbiente: false,
+        };
+      });
     } catch {
       /* silencioso */
     }

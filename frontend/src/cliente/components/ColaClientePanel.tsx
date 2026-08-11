@@ -1,4 +1,4 @@
-import { es } from "@dcuerdas/shared";
+import { es, metaCola, zonaCola } from "@dcuerdas/shared";
 import { ClockIcon, PlayIcon } from "./Icons";
 
 export type ColaPublicaItem = {
@@ -19,10 +19,9 @@ type Props = {
 };
 
 export function etiquetaMesa(
-  item: Pick<ColaPublicaItem, "numero_mesa" | "etiqueta" | "tipo">,
+  item: Pick<ColaPublicaItem, "numero_mesa" | "etiqueta" | "tipo" | "nombre_cliente">,
 ): string {
-  if (item.tipo === "local" || item.etiqueta === "Local") return "Local";
-  return item.etiqueta ?? `Mesa ${item.numero_mesa}`;
+  return zonaCola(item);
 }
 
 export function mensajeAntes(antesDeTi: number, estado: string): string {
@@ -80,9 +79,7 @@ export function ColaClientePanel({ cola, numeroMesa, compacto }: Props) {
             {es.cola.ahoraSuena}
           </div>
           <div className="cola-ahora-titulo">{ahoraSuena.titulo_cancion}</div>
-          <div className="cola-ahora-meta">
-            {ahoraSuena.nombre_cliente} · {etiquetaMesa(ahoraSuena)}
-          </div>
+          <div className="cola-ahora-meta">{metaCola(ahoraSuena)}</div>
         </div>
       )}
 
