@@ -4,7 +4,7 @@ import { StarIcon, ClockIcon, UsersIcon, QueueIcon, FlameIcon } from "./AdminIco
 import { abrirReproductorVentana } from "./abrirReproductorVentana";
 import { mostrarReproductorBubble } from "./ReproductorBubble";
 import {
-  estaPlayingEnVivo,
+  hayTrackEnPlayer,
   miniaturaYoutube,
   suscribirNowPlaying,
   type NowPlayingPayload,
@@ -138,8 +138,8 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
     .filter((c) => c.estado === "pendiente" && c.id !== reproduciendo?.id)
     .slice(0, 5);
 
-  // Lo que suena de verdad en la pestaña Reproductor (cola o ambiente).
-  const liveActivo = estaPlayingEnVivo(nowLive);
+  // Lo que hay en la pestaña Reproductor (cola o ambiente), aunque esté en pausa.
+  const liveActivo = hayTrackEnPlayer(nowLive);
   const ahora = liveActivo
     ? {
         videoId: nowLive!.youtube_video_id!,
@@ -147,17 +147,21 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
           nowLive!.titulo?.trim() || (nowLive!.esAmbiente ? "Música de ambiente" : "Sin título"),
         ),
         meta: nowLive!.esAmbiente
-          ? "Música de ambiente"
+          ? nowLive!.playing
+            ? "Música de ambiente"
+            : "Ambiente · pausado"
           : nowLive!.nombre_cliente && nowLive!.nombre_cliente !== "Local"
             ? nowLive!.nombre_cliente
             : "",
-        badge: nowLive!.esAmbiente
-          ? "Ambiente"
-          : nowLive!.numero_mesa != null && nowLive!.numero_mesa > 0
-            ? `Mesa ${nowLive!.numero_mesa}`
-            : nowLive!.nombre_cliente === "Local" || !nowLive!.numero_mesa
-              ? "Local"
-              : "",
+        badge: !nowLive!.playing
+          ? "Pausado"
+          : nowLive!.esAmbiente
+            ? "Ambiente"
+            : nowLive!.numero_mesa != null && nowLive!.numero_mesa > 0
+              ? `Mesa ${nowLive!.numero_mesa}`
+              : nowLive!.nombre_cliente === "Local" || !nowLive!.numero_mesa
+                ? "Local"
+                : "",
         esAmbiente: nowLive!.esAmbiente,
       }
     : reproduciendo

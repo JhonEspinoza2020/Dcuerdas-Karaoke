@@ -77,6 +77,8 @@ export function useYouTubePlayer(
           fs: 0,
           playsinline: 1,
           iv_load_policy: 3,
+          // mute en URL ayuda al autoplay; JS desmutea cuando hay gesto / unlock.
+          mute: 1,
         },
         events: {
           onReady: () => {
@@ -108,7 +110,24 @@ export function useYouTubePlayer(
     };
   }, []);
 
-  const play = (videoId: string, startSeconds = 0) => {
+  const asegurarSonido = () => {
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      p.unMute?.();
+      if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+      const st = p.getPlayerState?.() ?? -1;
+      if (st !== 1 && st !== 3) p.playVideo?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /**
+   * @param preferUnmuted intentar sonido de una vez (p. ej. tras click “Reproductor”).
+   * Si el navegador lo bloquea, cae a mute+play y reintenta unmute.
+   */
+  const play = (videoId: string, startSeconds = 0, preferUnmuted = false) => {
     const p = playerRef.current;
     if (!p?.loadVideoById) return;
     if (startSeconds > 1) {
@@ -116,8 +135,8 @@ export function useYouTubePlayer(
     } else {
       p.loadVideoById(videoId);
     }
-    // Mute → play (autoplay permitido) → unmute + reintentos si el iframe quedó en pausa.
-    const intentar = (n: number) => {
+
+    const mutePlay = (n: number) => {
       try {
         p.mute?.();
         p.playVideo?.();
@@ -127,19 +146,38 @@ export function useYouTubePlayer(
       window.setTimeout(() => {
         try {
           const st = p.getPlayerState?.() ?? -1;
-          // 1 PLAYING, 3 BUFFERING — ya va; solo falta sonido.
           if (st === 1 || st === 3) {
+            // Tras PLAYING muted, pedir sonido (a veces el navegador lo concede).
             p.unMute?.();
             if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
             return;
           }
-          if (n < 10) intentar(n + 1);
+          if (n < 12) mutePlay(n + 1);
         } catch {
-          if (n < 10) intentar(n + 1);
+          if (n < 12) mutePlay(n + 1);
         }
-      }, 100 + n * 90);
+      }, 90 + n * 70);
     };
-    window.setTimeout(() => intentar(0), 40);
+
+    window.setTimeout(() => {
+      if (preferUnmuted) {
+        try {
+          p.unMute?.();
+          p.setVolume?.(100);
+          p.playVideo?.();
+        } catch {
+          /* ignore */
+        }
+        window.setTimeout(() => {
+          const st = p.getPlayerState?.() ?? -1;
+          const muted = p.isMuted?.() ?? true;
+          if (st === 1 && !muted) return;
+          mutePlay(0);
+        }, 220);
+        return;
+      }
+      mutePlay(0);
+    }, 40);
   };
 
   const resume = () => {
@@ -147,15 +185,7 @@ export function useYouTubePlayer(
     if (!p) return;
     try {
       p.playVideo?.();
-      // Si ya estaba muted por autoplay, subir sonido al reanudar.
-      window.setTimeout(() => {
-        try {
-          p.unMute?.();
-          if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
-        } catch {
-          /* ignore */
-        }
-      }, 80);
+      window.setTimeout(() => asegurarSonido(), 60);
     } catch {
       /* ignore */
     }
@@ -182,11 +212,7 @@ export function useYouTubePlayer(
   };
 
   const unMute = () => {
-    try {
-      playerRef.current?.unMute?.();
-    } catch {
-      /* ignore */
-    }
+    asegurarSonido();
   };
 
   const setVolume = (vol: number) => {
@@ -205,6 +231,14 @@ export function useYouTubePlayer(
     }
   };
 
+  const isMuted = () => {
+    try {
+      return playerRef.current?.isMuted?.() ?? true;
+    } catch {
+      return true;
+    }
+  };
+
   return {
     ready,
     play,
@@ -217,5 +251,6 @@ export function useYouTubePlayer(
     getVolume,
     getPlayerState,
     getCurrentTime,
+    isMuted,
   };
 }

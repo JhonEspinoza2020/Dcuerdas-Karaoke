@@ -20,6 +20,7 @@ import {
 import {
   REPRO_CMD_CHANNEL,
   consumirUnlockAudioReciente,
+  hayUnlockAudioReciente,
 } from "./abrirReproductorVentana";
 
 type Props = {
@@ -145,7 +146,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const titulosPoolRef = useRef<Map<string, string>>(new Map());
   const poolRadioRef = useRef<string[]>([]);
   const preferidasRef = useRef<Set<string>>(new Set());
-  const playRef = useRef<(id: string, startSeconds?: number) => void>(() => {});
+  const playRef = useRef<(id: string, startSeconds?: number, preferUnmuted?: boolean) => void>(() => {});
   const resumeRef = useRef<() => void>(() => {});
   const pauseRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
@@ -207,11 +208,11 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     if (comoRadio) {
       radioCubiertoRef.current = true;
       setRadioCubierto(true);
-      muteRef.current();
     }
     // Solo reanudar tras recarga real de la pestaña (no en cada tema de cola/ambiente).
     const desde = consumirPosicionTrasRecarga(videoId) ?? 0;
-    playRef.current(videoId, desde > 2 ? desde : 0);
+    // Tras click en “Reproductor” intentar sonido ya (sin esperar pantalla completa).
+    playRef.current(videoId, desde > 2 ? desde : 0, hayUnlockAudioReciente());
     clearRadioWatchdog();
 
     const esperado = videoId;
@@ -1068,7 +1069,21 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         forzarSonidoYPlay();
       }
     };
+    // Cualquier gesto en esta pestaña desbloquea volumen (sin forzar resume:
+    // si el admin pausó en YouTube, no lo reanudamos al hacer click).
+    const activarSonido = () => {
+      unMuteRef.current();
+    };
+    const onFs = () => {
+      if (!document.fullscreenElement) return;
+      pausaUsuarioRef.current = false;
+      unMuteRef.current();
+      resumeRef.current();
+    };
     document.addEventListener("visibilitychange", onVis);
+    document.addEventListener("fullscreenchange", onFs);
+    window.addEventListener("pointerdown", activarSonido);
+    window.addEventListener("keydown", activarSonido);
     return () => {
       try {
         ch?.close();
@@ -1076,6 +1091,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         /* ignore */
       }
       document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("fullscreenchange", onFs);
+      window.removeEventListener("pointerdown", activarSonido);
+      window.removeEventListener("keydown", activarSonido);
     };
   }, [visible, ready, forzarSonidoYPlay]);
 
@@ -1238,7 +1256,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           </button>
           <button
             type="button"
-            onClick={() => contenedorRef.current?.requestFullscreen?.().catch(() => {})}
+            onClick={() => {
+              pausaUsuarioRef.current = false;
+              unMuteRef.current();
+              resumeRef.current();
+              void contenedorRef.current?.requestFullscreen?.().catch(() => {});
+            }}
             className="btn-primary rc-btn"
           >
             Pantalla completa

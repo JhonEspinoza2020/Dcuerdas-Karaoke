@@ -27,6 +27,7 @@ interface YTPlayer {
   playVideo(): void;
   mute(): void;
   unMute(): void;
+  isMuted(): boolean;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   getCurrentTime(): number;
   getPlayerState(): number;

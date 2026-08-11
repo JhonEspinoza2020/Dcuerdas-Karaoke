@@ -54,6 +54,15 @@ export function solicitarPlayReproductor(): void {
   }
 }
 
+export function hayUnlockAudioReciente(maxAgeMs = 20_000): boolean {
+  try {
+    const ts = Number(localStorage.getItem(REPRO_AUDIO_UNLOCK_KEY) || 0);
+    return !!ts && Date.now() - ts <= maxAgeMs;
+  } catch {
+    return false;
+  }
+}
+
 export function consumirUnlockAudioReciente(maxAgeMs = 20_000): boolean {
   try {
     const ts = Number(localStorage.getItem(REPRO_AUDIO_UNLOCK_KEY) || 0);
@@ -65,14 +74,33 @@ export function consumirUnlockAudioReciente(maxAgeMs = 20_000): boolean {
   }
 }
 
-function abrirConUrl(url: string): Window | null {
+/** Abre/navega con <a target> bajo el gesto del click (mejor autoplay con sonido). */
+function navegarConGesto(url: string): Window | null {
   try {
-    const win = window.open(url, REPRODUCTOR_WINDOW_NAME);
-    if (!win) return null;
-    return recordarYEnfocar(win);
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = REPRODUCTOR_WINDOW_NAME;
+    a.rel = "opener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   } catch {
-    return null;
+    /* ignore */
   }
+  try {
+    const win = window.open("", REPRODUCTOR_WINDOW_NAME);
+    if (win) return recordarYEnfocar(win);
+  } catch {
+    /* ignore */
+  }
+  try {
+    const win = window.open(url, REPRODUCTOR_WINDOW_NAME, "noopener=no");
+    if (win) return recordarYEnfocar(win);
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /**
@@ -93,12 +121,11 @@ export function abrirReproductorVentana(): Window | null {
     reproWin = null;
   }
 
-  // Probe sin URL: si la pestaña ya existe, el navegador la devuelve SIN recargar.
   let win: Window | null = null;
   try {
     win = window.open("", REPRODUCTOR_WINDOW_NAME);
   } catch {
-    return abrirConUrl(url);
+    return navegarConGesto(url);
   }
   if (!win) return null;
 
@@ -107,22 +134,19 @@ export function abrirReproductorVentana(): Window | null {
     return recordarYEnfocar(win);
   }
 
-  // Ventana nueva en about:blank: cerrar y abrir CON url en el mismo click
-  // (mejor chance de autoplay con sonido que location.href después).
   if (esAboutBlank(win)) {
     try {
       win.close();
     } catch {
       /* ignore */
     }
-    const conUrl = abrirConUrl(url);
-    if (conUrl) return conUrl;
+    return navegarConGesto(url);
   }
 
   try {
     win.location.replace(url);
     return recordarYEnfocar(win);
   } catch {
-    return abrirConUrl(url);
+    return navegarConGesto(url);
   }
 }

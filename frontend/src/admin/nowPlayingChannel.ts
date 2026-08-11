@@ -104,6 +104,16 @@ export function estaPlayingEnVivo(payload: NowPlayingPayload | null): boolean {
 }
 
 /**
+ * Hay tema cargado en la pestaña Reproductor (sonando o en pausa).
+ * Sirve para el resumen: no borrar “Ahora suena” al pausar el video.
+ */
+export function hayTrackEnPlayer(payload: NowPlayingPayload | null): boolean {
+  if (!payload?.youtube_video_id) return false;
+  const ts = payload.ts ?? 0;
+  return Date.now() - ts <= HEARTBEAT_MAX_AGE_MS;
+}
+
+/**
  * Suscribe a cambios en vivo. Llama onMsg con playing=false si el player
  * deja de emitir heartbeat (pestaña cerrada).
  */
@@ -123,8 +133,8 @@ export function suscribirNowPlaying(
       emitir(payloadQuieto());
       return;
     }
-    if (!estaPlayingEnVivo(stored)) {
-      emitir({ ...stored, playing: false });
+    if (!hayTrackEnPlayer(stored)) {
+      emitir(payloadQuieto());
       return;
     }
     emitir(stored);
@@ -147,12 +157,12 @@ export function suscribirNowPlaying(
   };
   window.addEventListener("storage", onStorage);
 
-  // Arranque + watchdog: si cierran la pestaña del player, las ondas se detienen.
+  // Arranque + watchdog: si cierran la pestaña del player, limpiar (aunque estuviera en pausa).
   desdeStorage();
   const tick = window.setInterval(() => {
-    if (!last?.playing) return;
-    if (!estaPlayingEnVivo(last)) {
-      emitir({ ...last, playing: false });
+    if (!last?.youtube_video_id) return;
+    if (!hayTrackEnPlayer(last)) {
+      emitir(payloadQuieto());
     }
   }, 800);
 
