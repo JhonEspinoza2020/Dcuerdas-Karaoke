@@ -1062,47 +1062,36 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     if (!ready) return;
     sesionActivaRef.current = true;
     const st = getStateRef.current();
-    // Ya sonando: no mute/play de nuevo (eso era el trabón al re-click del círculo).
+    // Ya sonando: no tocar.
     if (ytPlayingRef.current || st === 1) return;
 
     pausaUsuarioRef.current = false;
     desbloquearAudioAnuncio();
 
     void (async () => {
-      const reintentarVideoActual = () => {
-        const vid =
-          actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
-        if (!vid) {
-          resumeRef.current();
-          return;
-        }
-        if (!ytPlayingRef.current && getStateRef.current() !== 1) {
-          playRef.current(vid, 0, false);
-        } else {
-          resumeRef.current();
-        }
-      };
-
-      if (hayPedidoEnCola()) {
-        reintentarVideoActual();
+      // Si ya hay tema cargado (ambiente o cola), solo resume — no reload/mute.
+      const vid =
+        actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
+      if (vid || actualRef.current || rellenoActivoRef.current) {
+        resumeRef.current();
         return;
       }
-      if (actualRef.current || rellenoActivoRef.current) {
-        reintentarVideoActual();
+      if (hayPedidoEnCola()) {
+        resumeRef.current();
         return;
       }
       if (poolRadioRef.current.length === 0) {
         await cargarPoolRadio();
       }
-      if (hayPedidoEnCola() || actualRef.current) {
-        reintentarVideoActual();
+      if (hayPedidoEnCola() || actualRef.current || videoActualRadioRef.current) {
+        resumeRef.current();
         return;
       }
       if (!rellenoActivoRef.current) {
         radioArrancadaRef.current = false;
         iniciarRelleno();
       } else {
-        reintentarVideoActual();
+        resumeRef.current();
       }
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);

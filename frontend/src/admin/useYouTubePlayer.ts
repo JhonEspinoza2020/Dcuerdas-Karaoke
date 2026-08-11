@@ -146,7 +146,8 @@ export function useYouTubePlayer(
 
     const mutePlay = (n: number) => {
       try {
-        p.mute?.();
+        // Solo mutear en el arranque si aún no hubo gesto de sonido.
+        if (!audioUnlockedRef.current) p.mute?.();
         p.playVideo?.();
       } catch {
         /* ignore */
@@ -155,7 +156,6 @@ export function useYouTubePlayer(
         try {
           const st = p.getPlayerState?.() ?? -1;
           if (st === 1 || st === 3) {
-            // Video corriendo (muted). Sonido solo si ya hubo gesto.
             aplicarSonidoSiLibre();
             return;
           }
@@ -174,12 +174,12 @@ export function useYouTubePlayer(
     if (!p) return;
     try {
       const st = p.getPlayerState?.() ?? -1;
-      // Ya sonando: no tocar (mute/play a mitad causa el “traba” al reenfocar).
+      // Ya sonando: no tocar.
       if (st === 1) {
         aplicarSonidoSiLibre();
         return;
       }
-      p.mute?.();
+      // Reenfocar / círculo: NUNCA mute aquí (bajaba el volumen a cero).
       p.playVideo?.();
       aplicarSonidoSiLibre();
     } catch {
