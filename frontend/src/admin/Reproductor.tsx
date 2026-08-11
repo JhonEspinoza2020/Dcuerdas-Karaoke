@@ -180,6 +180,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const visibleAntesRef = useRef(false);
   /** Solo true después de abrir la pestaña Reproductor al menos una vez. */
   const sesionActivaRef = useRef(false);
+  /** Chrome a veces emite PAUSED antes de poner visibility=hidden. */
+  const tabOcultoRef = useRef(false);
+  const ocultoDesdeRef = useRef(0);
   const radioErrorLockRef = useRef(false);
   /** Evita mensajes de error mientras el admin salta de tema. */
   const saltandoRef = useRef(false);
@@ -234,20 +237,20 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           if (pausaUsuarioRef.current) return;
 
           const st = getStateRef.current();
+          let t = 0;
+          try {
+            t = getCurrentTimeRef.current();
+          } catch {
+            t = 0;
+          }
+          // Ya está vivo: no saltar / no marcar basura.
+          if (st === 1 || t > 0.4) {
+            yaSonabaRef.current = true;
+            clearRadioWatchdog();
+            return;
+          }
           // -1 unstarted, 2 paused, 3 buffering, 5 cued → reintentar mute+play.
           if (st === -1 || st === 2 || st === 3 || st === 5) {
-            let t = 0;
-            try {
-              t = getCurrentTimeRef.current();
-            } catch {
-              t = 0;
-            }
-            // Si el tiempo avanzó, ya está vivo (aunque el state parpadee).
-            if (t > 0.4) {
-              yaSonabaRef.current = true;
-              clearRadioWatchdog();
-              return;
-            }
             try {
               muteRef.current();
               resumeRef.current();
@@ -267,7 +270,17 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             return;
           }
 
-          // Estado raro → siguiente ambiente y marcar.
+          // Estado raro → reintentar una vez más; no quemar a ciegas.
+          if (reintentos < RADIO_WATCHDOG_MAX_RETRIES) {
+            try {
+              muteRef.current();
+              resumeRef.current();
+            } catch {
+              /* ignore */
+            }
+            armWatchdog(RADIO_WATCHDOG_RETRY_MS, reintentos + 1);
+            return;
+          }
           radioErrorLockRef.current = false;
           bloqueadosRadioRef.current.add(esperado);
           api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
@@ -297,6 +310,17 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         // No saltar pedidos mientras suena saludo/anuncio (TTS puede pausar YT un momento).
         if (saludoActivoRef.current || anuncioReproduciendoRef.current) return;
         const st = getStateRef.current();
+        let tCola = 0;
+        try {
+          tCola = getCurrentTimeRef.current();
+        } catch {
+          tCola = 0;
+        }
+        if (st === 1 || tCola > 0.4) {
+          yaSonabaRef.current = true;
+          clearRadioWatchdog();
+          return;
+        }
         // Autoplay/gesto o buffering: reintentar, no completar.
         if (st === 3 || st === -1 || st === 5 || st === 2) {
           try {
@@ -895,10 +919,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
 
-    // Al ir al admin, Chrome/YouTube pausan la pestaña oculta → no tratarlo como pausa del usuario
-    // ni mostrar “Pausado” en el resumen; se reanuda al volver.
+    // Chrome a menudo emite PAUSED antes de visibility=hidden al cambiar de pestaña.
+    const ocultoReciente =
+      tabOcultoRef.current ||
+      document.visibilityState === "hidden" ||
+      (ocultoDesdeRef.current > 0 && Date.now() - ocultoDesdeRef.current < 2500);
     if (
-      document.visibilityState === "hidden" &&
+      ocultoReciente &&
       yaSonabaRef.current &&
       sesionActivaRef.current &&
       !saltarEnCursoRef.current
@@ -1124,19 +1151,29 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [poolVersion, ready, iniciarRelleno, visible]);
 
-  /** Pedido desde el click de “Reproductor” / círculo: arrancar solo si hace falta. */
-  const forzarSonidoYPlay = useCallback(() => {
+  /** Pedido desde el click de “Reproductor” / círculo. */
+  const forzarSonidoYPlay = useCallback((modo: "play" | "focus" = "play") => {
     if (!ready) return;
     sesionActivaRef.current = true;
-    // Click del círculo deja flag → desbloquear volumen antes de play.
-    if (hayUnlockAudioReciente()) {
-      consumirUnlockAudioReciente();
-      unlockAudioRef.current();
-    }
     const st = getStateRef.current();
-    // Ya sonando: solo asegurar volumen, no reiniciar.
-    if (ytPlayingRef.current || st === 1) {
-      unlockAudioRef.current();
+
+    // Focus (círculo con pestaña ya abierta): no unmute ni reiniciar.
+    if (modo === "focus") {
+      if (ytPlayingRef.current || st === 1) return;
+      // Solo reanudar si no fue pausa intencional del admin.
+      if (pausaUsuarioRef.current) return;
+      if (actualRef.current || rellenoActivoRef.current || videoActualRadioRef.current) {
+        resumeRef.current();
+      }
+      return;
+    }
+
+    // Play (pestaña nueva): arrancar sin forzar unmute (gesto = capa / Saltar).
+    if (hayUnlockAudioReciente()) consumirUnlockAudioReciente();
+    if (ytPlayingRef.current || st === 1) return;
+
+    // No pisar una pausa real del usuario en la misma pestaña.
+    if (pausaUsuarioRef.current && (actualRef.current || rellenoActivoRef.current)) {
       return;
     }
 
@@ -1148,12 +1185,10 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
       if (vid || actualRef.current || rellenoActivoRef.current) {
         resumeRef.current();
-        unlockAudioRef.current();
         return;
       }
       if (hayPedidoEnCola()) {
         resumeRef.current();
-        unlockAudioRef.current();
         return;
       }
       if (poolRadioRef.current.length === 0) {
@@ -1161,21 +1196,18 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       }
       if (hayPedidoEnCola() || actualRef.current || videoActualRadioRef.current) {
         resumeRef.current();
-        unlockAudioRef.current();
         return;
       }
       if (!rellenoActivoRef.current) {
         radioArrancadaRef.current = false;
         iniciarRelleno();
-        unlockAudioRef.current();
       } else {
         resumeRef.current();
-        unlockAudioRef.current();
       }
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
 
-  // Click en admin → BroadcastChannel: play solo si parado; focus = no-op si suena.
+  // Click en admin → BroadcastChannel.
   useEffect(() => {
     if (!visible || !ready) return;
     let ch: BroadcastChannel | null = null;
@@ -1183,38 +1215,39 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
       ch.onmessage = (ev) => {
         const tipo = ev.data?.type;
-        if (tipo === "focus" || tipo === "play") forzarSonidoYPlay();
+        if (tipo === "focus") forzarSonidoYPlay("focus");
+        else if (tipo === "play") forzarSonidoYPlay("play");
       };
     } catch {
       /* ignore */
     }
-    if (hayUnlockAudioReciente()) {
-      forzarSonidoYPlay();
-    }
+    if (hayUnlockAudioReciente()) forzarSonidoYPlay("play");
+
     const onVis = () => {
-      if (document.visibilityState !== "visible") return;
-      // Volver a la pestaña del player: reanudar (Chrome lo pausa al ir al admin).
+      if (document.visibilityState === "hidden") {
+        tabOcultoRef.current = true;
+        ocultoDesdeRef.current = Date.now();
+        return;
+      }
+      tabOcultoRef.current = false;
+      // Volver a la pestaña: reanudar solo si no pausó el admin a propósito.
       if (sesionActivaRef.current && !pausaUsuarioRef.current) {
         if (rellenoActivoRef.current || actualRef.current || videoActualRadioRef.current) {
           resumeRef.current();
-          unlockAudioRef.current();
         }
       }
-      if (hayUnlockAudioReciente()) forzarSonidoYPlay();
-    };
-    const activarSonido = () => {
-      unlockAudioRef.current();
+      if (hayUnlockAudioReciente()) forzarSonidoYPlay("play");
     };
     const onFs = () => {
       if (!document.fullscreenElement) return;
       pausaUsuarioRef.current = false;
       unlockAudioRef.current();
       resumeRef.current();
+      audioGestoOkRef.current = true;
+      setPedirGestoAudio(false);
     };
     document.addEventListener("visibilitychange", onVis);
     document.addEventListener("fullscreenchange", onFs);
-    window.addEventListener("pointerdown", activarSonido);
-    window.addEventListener("keydown", activarSonido);
     return () => {
       try {
         ch?.close();
@@ -1223,8 +1256,6 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       }
       document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("fullscreenchange", onFs);
-      window.removeEventListener("pointerdown", activarSonido);
-      window.removeEventListener("keydown", activarSonido);
     };
   }, [visible, ready, forzarSonidoYPlay]);
 
@@ -1248,8 +1279,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       return;
     }
 
-    // Primera vez / click reciente en Reproductor: arrancar ambiente o cola con sonido.
-    forzarSonidoYPlay();
+    // Primera vez / click reciente en Reproductor: arrancar ambiente o cola.
+    forzarSonidoYPlay("play");
   }, [
     visible,
     ready,

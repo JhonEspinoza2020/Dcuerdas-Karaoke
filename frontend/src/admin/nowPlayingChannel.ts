@@ -2,8 +2,9 @@ import type { ColaItem } from "@dcuerdas/shared";
 
 export const NOW_PLAYING_CHANNEL = "dc-now-playing";
 export const NOW_PLAYING_STORAGE_KEY = "dc-now-playing-v1";
-/** Si no hay heartbeat reciente, se considera el player cerrado/pausado. */
-export const HEARTBEAT_MAX_AGE_MS = 2500;
+/** Si no hay heartbeat reciente, se considera el player cerrado/pausado.
+ *  2.5s fallaba con pestaña en background (Chrome throttle timers). */
+export const HEARTBEAT_MAX_AGE_MS = 12_000;
 
 export type NowPlayingPayload = {
   playing: boolean;

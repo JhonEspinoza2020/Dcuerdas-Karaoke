@@ -2,7 +2,7 @@
 
 export const REPRODUCTOR_WINDOW_NAME = "dc-reproductor";
 export const REPRODUCTOR_PATH = "/admin/pantalla";
-/** Timestamp: el admin acaba de pedir play (gesto de click). */
+/** Timestamp: el admin acaba de pedir play (solo pestaña nueva). */
 export const REPRO_AUDIO_UNLOCK_KEY = "dc-repro-audio-unlock";
 export const REPRO_CMD_CHANNEL = "dc-repro-cmd";
 
@@ -38,7 +38,7 @@ function recordarYEnfocar(win: Window): Window {
   return win;
 }
 
-/** Solo para arranque / pestaña nueva: pide play al reproductor. */
+/** Solo para arranque / pestaña nueva. */
 export function solicitarPlayReproductor(): void {
   try {
     localStorage.setItem(REPRO_AUDIO_UNLOCK_KEY, String(Date.now()));
@@ -54,10 +54,7 @@ export function solicitarPlayReproductor(): void {
   }
 }
 
-/**
- * Pestaña ya abierta: solo avisar “focus”.
- * El player NO debe reiniciar el video si ya está sonando.
- */
+/** Pestaña ya abierta: solo focus (sin unlock/unmute). */
 export function solicitarFocusReproductor(): void {
   try {
     const ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
@@ -88,7 +85,6 @@ export function consumirUnlockAudioReciente(maxAgeMs = 20_000): boolean {
   }
 }
 
-/** Abre/navega con <a target> bajo el gesto del click (mejor autoplay con sonido). */
 function navegarConGesto(url: string): Window | null {
   try {
     const a = document.createElement("a");
@@ -119,13 +115,11 @@ function navegarConGesto(url: string): Window | null {
 
 /**
  * Abre el reproductor en otra pestaña.
- * Si ya está abierta, solo la enfoca (sin reiniciar audio).
- * El click del círculo siempre deja flag de unlock para volumen.
+ * Si ya está abierta: solo enfoca (no reinicia ni desmutea).
+ * Si es nueva: pide play para arrancar ambiente/cola.
  */
 export function abrirReproductorVentana(): Window | null {
   const url = `${window.location.origin}${REPRODUCTOR_PATH}`;
-  // Siempre marcar unlock (también al reenfocar): el player puede estar muteado.
-  solicitarPlayReproductor();
 
   try {
     if (reproWin && !reproWin.closed && mismaPantalla(reproWin)) {
@@ -140,6 +134,7 @@ export function abrirReproductorVentana(): Window | null {
   try {
     win = window.open("", REPRODUCTOR_WINDOW_NAME);
   } catch {
+    solicitarPlayReproductor();
     return navegarConGesto(url);
   }
   if (!win) return null;
@@ -148,6 +143,9 @@ export function abrirReproductorVentana(): Window | null {
     solicitarFocusReproductor();
     return recordarYEnfocar(win);
   }
+
+  // Ventana nueva → arrancar.
+  solicitarPlayReproductor();
 
   if (esAboutBlank(win)) {
     try {
