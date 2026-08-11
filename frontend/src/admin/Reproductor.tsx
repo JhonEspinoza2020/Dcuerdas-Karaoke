@@ -20,6 +20,7 @@ import {
 import {
   REPRO_CMD_CHANNEL,
   consumirUnlockAudioReciente,
+  hayUnlockAudioReciente,
 } from "./abrirReproductorVentana";
 
 type Props = {
@@ -882,12 +883,30 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       pausaUsuarioRef.current = false;
       radioErrorLockRef.current = false;
       setError("");
-      // Destapar siempre al sonar: el check st===1 a veces fallaba y dejaba
-      // pantalla negra con logo mientras el audio corría debajo.
       destaparRadio();
       const mesa = actualRef.current;
       if (mesa?.youtube_video_id) agregarAlPool(mesa.youtube_video_id, mesa.titulo_cancion);
-    } else if (
+      onPlayingChange?.(true);
+      ytPlayingRef.current = true;
+      emitirNowPlaying(true);
+      return;
+    }
+
+    // Al ir al admin, Chrome/YouTube pausan la pestaña oculta → no tratarlo como pausa del usuario
+    // ni mostrar “Pausado” en el resumen; se reanuda al volver.
+    if (
+      document.visibilityState === "hidden" &&
+      yaSonabaRef.current &&
+      sesionActivaRef.current &&
+      !saltarEnCursoRef.current
+    ) {
+      onPlayingChange?.(true);
+      ytPlayingRef.current = true;
+      emitirNowPlaying(true);
+      return;
+    }
+
+    if (
       !saltarEnCursoRef.current &&
       !anuncioReproduciendoRef.current &&
       !saludoActivoRef.current &&
@@ -896,9 +915,9 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     ) {
       pausaUsuarioRef.current = true;
     }
-    onPlayingChange?.(playing);
-    ytPlayingRef.current = playing;
-    emitirNowPlaying(playing);
+    onPlayingChange?.(false);
+    ytPlayingRef.current = false;
+    emitirNowPlaying(false);
   }, [onPlayingChange, agregarAlPool, destaparRadio, emitirNowPlaying]);
 
   const { ready, play, resume, pause, stop, mute, unMute, unlockAudio, setVolume, getVolume, getPlayerState, getCurrentTime } =
@@ -1061,23 +1080,32 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const forzarSonidoYPlay = useCallback(() => {
     if (!ready) return;
     sesionActivaRef.current = true;
+    // Click del círculo deja flag → desbloquear volumen antes de play.
+    if (hayUnlockAudioReciente()) {
+      consumirUnlockAudioReciente();
+      unlockAudioRef.current();
+    }
     const st = getStateRef.current();
-    // Ya sonando: no tocar.
-    if (ytPlayingRef.current || st === 1) return;
+    // Ya sonando: solo asegurar volumen, no reiniciar.
+    if (ytPlayingRef.current || st === 1) {
+      unlockAudioRef.current();
+      return;
+    }
 
     pausaUsuarioRef.current = false;
     desbloquearAudioAnuncio();
 
     void (async () => {
-      // Si ya hay tema cargado (ambiente o cola), solo resume — no reload/mute.
       const vid =
         actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
       if (vid || actualRef.current || rellenoActivoRef.current) {
         resumeRef.current();
+        unlockAudioRef.current();
         return;
       }
       if (hayPedidoEnCola()) {
         resumeRef.current();
+        unlockAudioRef.current();
         return;
       }
       if (poolRadioRef.current.length === 0) {
@@ -1085,13 +1113,16 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       }
       if (hayPedidoEnCola() || actualRef.current || videoActualRadioRef.current) {
         resumeRef.current();
+        unlockAudioRef.current();
         return;
       }
       if (!rellenoActivoRef.current) {
         radioArrancadaRef.current = false;
         iniciarRelleno();
+        unlockAudioRef.current();
       } else {
         resumeRef.current();
+        unlockAudioRef.current();
       }
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
@@ -1104,21 +1135,25 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
       ch.onmessage = (ev) => {
         const tipo = ev.data?.type;
-        // focus y play: solo arrancan si está parado (forzarSonidoYPlay no-op si suena).
         if (tipo === "focus" || tipo === "play") forzarSonidoYPlay();
       };
     } catch {
       /* ignore */
     }
-    if (consumirUnlockAudioReciente()) {
+    if (hayUnlockAudioReciente()) {
       forzarSonidoYPlay();
     }
     const onVis = () => {
-      if (document.visibilityState === "visible" && consumirUnlockAudioReciente()) {
-        forzarSonidoYPlay();
+      if (document.visibilityState !== "visible") return;
+      // Volver a la pestaña del player: reanudar (Chrome lo pausa al ir al admin).
+      if (sesionActivaRef.current && !pausaUsuarioRef.current) {
+        if (rellenoActivoRef.current || actualRef.current || videoActualRadioRef.current) {
+          resumeRef.current();
+          unlockAudioRef.current();
+        }
       }
+      if (hayUnlockAudioReciente()) forzarSonidoYPlay();
     };
-    // Gesto en ESTA pestaña: ahí sí se puede oír.
     const activarSonido = () => {
       unlockAudioRef.current();
     };
@@ -1159,7 +1194,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     desbloquearAudioAnuncio();
     reiniciarTimerMinutos();
 
-    const pedirAuto = acabaDeAbrir || consumirUnlockAudioReciente();
+    const pedirAuto = acabaDeAbrir || hayUnlockAudioReciente();
     if (!pedirAuto) {
       // No forzar resume aquí: al cambiar deps del efecto reanudaba encima de la pausa del admin.
       return;

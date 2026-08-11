@@ -120,13 +120,15 @@ function navegarConGesto(url: string): Window | null {
 /**
  * Abre el reproductor en otra pestaña.
  * Si ya está abierta, solo la enfoca (sin reiniciar audio).
+ * El click del círculo siempre deja flag de unlock para volumen.
  */
 export function abrirReproductorVentana(): Window | null {
   const url = `${window.location.origin}${REPRODUCTOR_PATH}`;
+  // Siempre marcar unlock (también al reenfocar): el player puede estar muteado.
+  solicitarPlayReproductor();
 
   try {
     if (reproWin && !reproWin.closed && mismaPantalla(reproWin)) {
-      // Ya suena: solo traer al frente, sin “play” que traba el audio.
       solicitarFocusReproductor();
       return recordarYEnfocar(reproWin);
     }
@@ -138,7 +140,6 @@ export function abrirReproductorVentana(): Window | null {
   try {
     win = window.open("", REPRODUCTOR_WINDOW_NAME);
   } catch {
-    solicitarPlayReproductor();
     return navegarConGesto(url);
   }
   if (!win) return null;
@@ -147,9 +148,6 @@ export function abrirReproductorVentana(): Window | null {
     solicitarFocusReproductor();
     return recordarYEnfocar(win);
   }
-
-  // Ventana nueva → sí pedir arranque.
-  solicitarPlayReproductor();
 
   if (esAboutBlank(win)) {
     try {

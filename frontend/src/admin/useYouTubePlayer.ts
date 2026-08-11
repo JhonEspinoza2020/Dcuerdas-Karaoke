@@ -53,9 +53,19 @@ export function useYouTubePlayer(
   const onEndedRef = useRef(onEnded);
   const onErrorRef = useRef(onError);
   const onPlayingChangeRef = useRef(onPlayingChange);
-  /** Solo true tras gesto en ESTA pestaña. Unmute antes = Chrome pausa el video. */
+  /** Solo true tras gesto / click del círculo. Unmute antes sin esto = Chrome pausa. */
   const audioUnlockedRef = useRef(false);
   const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("dc-repro-audio-ok") === "1") {
+        audioUnlockedRef.current = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     onEndedRef.current = onEnded;
@@ -146,8 +156,12 @@ export function useYouTubePlayer(
 
     const mutePlay = (n: number) => {
       try {
-        // Solo mutear en el arranque si aún no hubo gesto de sonido.
-        if (!audioUnlockedRef.current) p.mute?.();
+        if (audioUnlockedRef.current) {
+          p.unMute?.();
+          if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+        } else {
+          p.mute?.();
+        }
         p.playVideo?.();
       } catch {
         /* ignore */
@@ -158,6 +172,11 @@ export function useYouTubePlayer(
           if (st === 1 || st === 3) {
             aplicarSonidoSiLibre();
             return;
+          }
+          // Unlock pedido pero el navegador bloqueó sonido → caer a mute para que al menos corra.
+          if (audioUnlockedRef.current && n === 5) {
+            p.mute?.();
+            p.playVideo?.();
           }
           if (n < 16) mutePlay(n + 1);
         } catch {
@@ -187,9 +206,14 @@ export function useYouTubePlayer(
     }
   };
 
-  /** Llamar solo desde gesto real en la pestaña del player. */
+  /** Llamar desde gesto o desde el click del círculo (flag en storage). */
   const unlockAudio = () => {
     audioUnlockedRef.current = true;
+    try {
+      sessionStorage.setItem("dc-repro-audio-ok", "1");
+    } catch {
+      /* ignore */
+    }
     const p = playerRef.current;
     if (!p) return;
     try {
