@@ -815,26 +815,28 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [completar, iniciarRelleno, iniciarCancion, detenerRadio, clearRadioWatchdog, accessToken]);
 
+  const destaparRadio = useCallback(() => {
+    yaSonabaRef.current = true;
+    clearRadioWatchdog();
+    saltarEnCursoRef.current = false;
+    setSaltandoUi(false);
+    unMuteRef.current();
+    const vol = getVolumeRef.current();
+    if (vol < 5) setVolumeRef.current(100);
+    if (radioCubiertoRef.current) {
+      radioCubiertoRef.current = false;
+      setRadioCubierto(false);
+    }
+  }, [clearRadioWatchdog]);
+
   const handlePlayingChange = useCallback((playing: boolean) => {
     if (playing) {
       pausaUsuarioRef.current = false;
       radioErrorLockRef.current = false;
       setError("");
-      const st = getStateRef.current();
-      // Solo PLAYING (1) destapa y libera Saltar.
-      if (st === 1) {
-        yaSonabaRef.current = true;
-        clearRadioWatchdog();
-        saltarEnCursoRef.current = false;
-        setSaltandoUi(false);
-        unMuteRef.current();
-        const vol = getVolumeRef.current();
-        if (vol < 5) setVolumeRef.current(100);
-        if (radioCubiertoRef.current) {
-          radioCubiertoRef.current = false;
-          setRadioCubierto(false);
-        }
-      }
+      // Destapar siempre al sonar: el check st===1 a veces fallaba y dejaba
+      // pantalla negra con logo mientras el audio corría debajo.
+      destaparRadio();
       const mesa = actualRef.current;
       if (mesa?.youtube_video_id) agregarAlPool(mesa.youtube_video_id, mesa.titulo_cancion);
     } else if (
@@ -849,7 +851,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     onPlayingChange?.(playing);
     ytPlayingRef.current = playing;
     emitirNowPlaying(playing);
-  }, [onPlayingChange, agregarAlPool, clearRadioWatchdog, emitirNowPlaying]);
+  }, [onPlayingChange, agregarAlPool, destaparRadio, emitirNowPlaying]);
 
   const { ready, play, resume, pause, stop, mute, unMute, setVolume, getVolume, getPlayerState, getCurrentTime } =
     useYouTubePlayer(onEnded, onError, handlePlayingChange);
@@ -862,6 +864,24 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   setVolumeRef.current = setVolume;
   getVolumeRef.current = getVolume;
   getStateRef.current = getPlayerState;
+
+  // Si la tapa negra se queda trabada (audio sí, video no), forzar destape.
+  useEffect(() => {
+    if (!radioCubierto || !ready) return;
+    const poll = window.setInterval(() => {
+      if (!radioCubiertoRef.current) return;
+      const st = getStateRef.current();
+      let t = 0;
+      try {
+        t = getCurrentTime();
+      } catch {
+        t = 0;
+      }
+      // PLAYING real, o el tiempo ya avanzó (audio corriendo bajo la tapa).
+      if (st === 1 || t > 0.25) destaparRadio();
+    }, 300);
+    return () => window.clearInterval(poll);
+  }, [radioCubierto, ready, getCurrentTime, destaparRadio]);
 
   // Persistir posición para no reiniciar si la pestaña se recarga.
   useEffect(() => {
@@ -1230,7 +1250,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
       <div className="pantalla" ref={contenedorRef}>
         {error && <div className="error-bar">{error}</div>}
 
-        <div className="player-wrap" style={{ visibility: actual || relleno ? "visible" : "hidden" }}>
+        <div
+          className="player-wrap"
+          style={{
+            visibility: actual || relleno || radioCubierto ? "visible" : "hidden",
+          }}
+        >
           <div id="yt-player" />
         </div>
 
@@ -1240,7 +1265,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           </div>
         )}
 
-        {!actual && !relleno && (
+        {!actual && !relleno && !radioCubierto && (
           <div className="idle">
             <BrandLogo size="hero" className="idle-logo" />
             <p className="lema">{es.marca.lema}</p>

@@ -39,7 +39,7 @@ function manejarEstadoPlayer(
     onPlayingChange?.(false);
     return;
   }
-  // Solo PLAYING destapa/confirma. BUFFERING en “no disponible” no debe abrir la tapa.
+  // Solo PLAYING confirma reproducción (BUFFERING en “no disponible” no debe destapar).
   if (data === YT.PlayerState.PLAYING) {
     onPlayingChange?.(true);
   }
