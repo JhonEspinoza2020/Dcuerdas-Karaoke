@@ -154,9 +154,11 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   const stopRef = useRef<() => void>(() => {});
   const muteRef = useRef<() => void>(() => {});
   const unMuteRef = useRef<() => void>(() => {});
+  const unlockAudioRef = useRef<() => void>(() => {});
   const setVolumeRef = useRef<(v: number) => void>(() => {});
   const getVolumeRef = useRef<() => number>(() => 100);
   const getStateRef = useRef<() => number>(() => -1);
+  const getCurrentTimeRef = useRef<() => number>(() => 0);
   const cancelarVozRef = useRef<() => void>(() => {});
   const saludoFinalPendienteRef = useRef(false);
   /** Overlay/TTS de saludo activo (ref: el state llega un tick tarde). */
@@ -228,9 +230,20 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           if (pausaUsuarioRef.current) return;
 
           const st = getStateRef.current();
-          // -1 unstarted, 2 paused, 3 buffering, 5 cued → autoplay/gesto, NO es video basura.
-          // Reintentar mute+play en lugar de “saltar y saltar”.
+          // -1 unstarted, 2 paused, 3 buffering, 5 cued → reintentar mute+play.
           if (st === -1 || st === 2 || st === 3 || st === 5) {
+            let t = 0;
+            try {
+              t = getCurrentTimeRef.current();
+            } catch {
+              t = 0;
+            }
+            // Si el tiempo avanzó, ya está vivo (aunque el state parpadee).
+            if (t > 0.4) {
+              yaSonabaRef.current = true;
+              clearRadioWatchdog();
+              return;
+            }
             try {
               muteRef.current();
               resumeRef.current();
@@ -239,13 +252,21 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             }
             if (reintentos < RADIO_WATCHDOG_MAX_RETRIES) {
               armWatchdog(RADIO_WATCHDOG_RETRY_MS, reintentos + 1);
+              return;
             }
-            // Tras muchos reintentos: quedarse en este tema (el admin puede dar play).
+            // Agotó reintentos sin avanzar → video malo / no embebible.
+            bloqueadosRadioRef.current.add(esperado);
+            api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
+            radioErrorLockRef.current = false;
+            setError("");
+            iniciarRellenoRef.current();
             return;
           }
 
-          // Estado raro / error silencioso → siguiente ambiente (sin quemar por autoplay).
+          // Estado raro → siguiente ambiente y marcar.
           radioErrorLockRef.current = false;
+          bloqueadosRadioRef.current.add(esperado);
+          api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
           const pendiente = colaRef.current.find(
             (c) => !completadasRef.current.has(c.id) && c.estado === "pendiente",
           );
@@ -256,16 +277,12 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             setRadioCubierto(false);
             videoActualRadioRef.current = null;
             setError("");
-            unMuteRef.current();
             saltarEnCursoRef.current = false;
             setSaltandoUi(false);
             iniciarCancionRef.current(pendiente);
             return;
           }
           setError("");
-          // Solo marcar bloqueado si agotamos reintentos en estado no-reproducible.
-          bloqueadosRadioRef.current.add(esperado);
-          api.marcarYoutubeBloqueado(accessTokenRef.current, esperado, "watchdog_radio").catch(() => {});
           iniciarRellenoRef.current();
           return;
         }
@@ -853,9 +870,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     clearRadioWatchdog();
     saltarEnCursoRef.current = false;
     setSaltandoUi(false);
-    unMuteRef.current();
-    const vol = getVolumeRef.current();
-    if (vol < 5) setVolumeRef.current(100);
+    // NO unMute aquí: sin gesto Chrome pausa y aparece el ▶ (parece video malo).
     if (radioCubiertoRef.current) {
       radioCubiertoRef.current = false;
       setRadioCubierto(false);
@@ -886,7 +901,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     emitirNowPlaying(playing);
   }, [onPlayingChange, agregarAlPool, destaparRadio, emitirNowPlaying]);
 
-  const { ready, play, resume, pause, stop, mute, unMute, setVolume, getVolume, getPlayerState, getCurrentTime } =
+  const { ready, play, resume, pause, stop, mute, unMute, unlockAudio, setVolume, getVolume, getPlayerState, getCurrentTime } =
     useYouTubePlayer(onEnded, onError, handlePlayingChange);
   playRef.current = play;
   resumeRef.current = resume;
@@ -894,9 +909,11 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
   stopRef.current = stop;
   muteRef.current = mute;
   unMuteRef.current = unMute;
+  unlockAudioRef.current = unlockAudio;
   setVolumeRef.current = setVolume;
   getVolumeRef.current = getVolume;
   getStateRef.current = getPlayerState;
+  getCurrentTimeRef.current = getCurrentTime;
 
   // Si la tapa negra se queda trabada (audio sí, video no), forzar destape.
   useEffect(() => {
@@ -1040,13 +1057,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [poolVersion, ready, iniciarRelleno, visible]);
 
-  /** Pedido desde el click de “Reproductor” / círculo: sonar sin segundo click. */
+  /** Pedido desde el click de “Reproductor” / círculo: arrancar video (muted OK). */
   const forzarSonidoYPlay = useCallback(() => {
     if (!ready) return;
     sesionActivaRef.current = true;
     pausaUsuarioRef.current = false;
     desbloquearAudioAnuncio();
-    unMuteRef.current();
+    // No unMute desde otra pestaña: solo reanudar muted.
     resumeRef.current();
     const vol = getVolumeRef.current();
     if (vol < 5) setVolumeRef.current(100);
@@ -1057,16 +1074,13 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
           actualRef.current?.youtube_video_id ?? videoActualRadioRef.current;
         if (!vid) {
           resumeRef.current();
-          unMuteRef.current();
           return;
         }
-        // Si quedó con el ▶ de YouTube, reload muted suele arrancar mejor que solo resume.
         if (!ytPlayingRef.current) {
           playRef.current(vid, 0, false);
         } else {
           resumeRef.current();
         }
-        unMuteRef.current();
       };
 
       if (hayPedidoEnCola()) {
@@ -1093,7 +1107,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     })();
   }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
 
-  // Click en admin → BroadcastChannel / unlock: reanudar con sonido.
+  // Click en admin → BroadcastChannel / unlock: reanudar video.
   useEffect(() => {
     if (!visible || !ready) return;
     let ch: BroadcastChannel | null = null;
@@ -1113,15 +1127,14 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
         forzarSonidoYPlay();
       }
     };
-    // Cualquier gesto en esta pestaña desbloquea volumen (sin forzar resume:
-    // si el admin pausó en YouTube, no lo reanudamos al hacer click).
+    // Gesto en ESTA pestaña: ahí sí se puede oír.
     const activarSonido = () => {
-      unMuteRef.current();
+      unlockAudioRef.current();
     };
     const onFs = () => {
       if (!document.fullscreenElement) return;
       pausaUsuarioRef.current = false;
-      unMuteRef.current();
+      unlockAudioRef.current();
       resumeRef.current();
     };
     document.addEventListener("visibilitychange", onVis);
@@ -1181,6 +1194,8 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     saltarEnCursoRef.current = true;
     setSaltandoUi(true);
     limpiarPosicionRepro();
+    // Gesto del admin: habilitar sonido para los siguientes temas.
+    unlockAudioRef.current();
 
     cancelarVozRef.current();
     if (anuncioAudioRef.current) {
@@ -1302,7 +1317,7 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
             type="button"
             onClick={() => {
               pausaUsuarioRef.current = false;
-              unMuteRef.current();
+              unlockAudioRef.current();
               resumeRef.current();
               void contenedorRef.current?.requestFullscreen?.().catch(() => {});
             }}

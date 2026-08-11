@@ -28,6 +28,7 @@ interface YTPlayer {
   mute(): void;
   unMute(): void;
   isMuted(): boolean;
+  getIframe(): HTMLIFrameElement;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   getCurrentTime(): number;
   getPlayerState(): number;

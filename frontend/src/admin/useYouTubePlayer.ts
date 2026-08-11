@@ -39,7 +39,6 @@ function manejarEstadoPlayer(
     onPlayingChange?.(false);
     return;
   }
-  // Solo PLAYING confirma reproducción (BUFFERING en “no disponible” no debe destapar).
   if (data === YT.PlayerState.PLAYING) {
     onPlayingChange?.(true);
   }
@@ -54,6 +53,8 @@ export function useYouTubePlayer(
   const onEndedRef = useRef(onEnded);
   const onErrorRef = useRef(onError);
   const onPlayingChangeRef = useRef(onPlayingChange);
+  /** Solo true tras gesto en ESTA pestaña. Unmute antes = Chrome pausa el video. */
+  const audioUnlockedRef = useRef(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -71,17 +72,25 @@ export function useYouTubePlayer(
         width: "100%",
         playerVars: {
           autoplay: 1,
+          mute: 1,
           controls: 1,
           modestbranding: 1,
           rel: 0,
           fs: 0,
           playsinline: 1,
           iv_load_policy: 3,
-          // mute en URL ayuda al autoplay; JS desmutea cuando hay gesto / unlock.
-          mute: 1,
         },
         events: {
-          onReady: () => {
+          onReady: (e) => {
+            try {
+              const iframe = e.target.getIframe?.();
+              iframe?.setAttribute(
+                "allow",
+                "autoplay; encrypted-media; picture-in-picture; fullscreen",
+              );
+            } catch {
+              /* ignore */
+            }
             if (!destroyed) setReady(true);
           },
           onStateChange: (e) => {
@@ -110,22 +119,21 @@ export function useYouTubePlayer(
     };
   }, []);
 
-  const asegurarSonido = () => {
+  const aplicarSonidoSiLibre = () => {
+    if (!audioUnlockedRef.current) return;
     const p = playerRef.current;
     if (!p) return;
     try {
       p.unMute?.();
       if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
-      const st = p.getPlayerState?.() ?? -1;
-      if (st !== 1 && st !== 3) p.playVideo?.();
     } catch {
       /* ignore */
     }
   };
 
   /**
-   * Arranca siempre en mute (autoplay permitido por el navegador) y luego
-   * intenta sonido. Así el video se ve sin click; el audio llega al PLAYING o al gesto.
+   * Siempre mute + play. NUNCA unMute aquí: si no hay gesto, Chrome pausa
+   * y queda el ▶ rojo (parece “video malo” y antes saltaba en bucle).
    */
   const play = (videoId: string, startSeconds = 0, _preferUnmuted = false) => {
     const p = playerRef.current;
@@ -147,16 +155,15 @@ export function useYouTubePlayer(
         try {
           const st = p.getPlayerState?.() ?? -1;
           if (st === 1 || st === 3) {
-            p.unMute?.();
-            if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
-            // Si sigue muteado (política del navegador), el gesto en la página lo libera.
+            // Video corriendo (muted). Sonido solo si ya hubo gesto.
+            aplicarSonidoSiLibre();
             return;
           }
-          if (n < 14) mutePlay(n + 1);
+          if (n < 16) mutePlay(n + 1);
         } catch {
-          if (n < 14) mutePlay(n + 1);
+          if (n < 16) mutePlay(n + 1);
         }
-      }, 80 + n * 60);
+      }, 70 + n * 50);
     };
 
     window.setTimeout(() => mutePlay(0), 30);
@@ -166,8 +173,26 @@ export function useYouTubePlayer(
     const p = playerRef.current;
     if (!p) return;
     try {
+      p.mute?.();
       p.playVideo?.();
-      window.setTimeout(() => asegurarSonido(), 60);
+      aplicarSonidoSiLibre();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /** Llamar solo desde gesto real en la pestaña del player. */
+  const unlockAudio = () => {
+    audioUnlockedRef.current = true;
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      p.unMute?.();
+      if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+      const st = p.getPlayerState?.() ?? -1;
+      if (st !== 1 && st !== 3) {
+        p.playVideo?.();
+      }
     } catch {
       /* ignore */
     }
@@ -194,7 +219,8 @@ export function useYouTubePlayer(
   };
 
   const unMute = () => {
-    asegurarSonido();
+    // Compat: solo suena si ya hubo unlock; si no, no arriesgar pausa.
+    if (audioUnlockedRef.current) aplicarSonidoSiLibre();
   };
 
   const setVolume = (vol: number) => {
@@ -229,6 +255,7 @@ export function useYouTubePlayer(
     stop,
     mute,
     unMute,
+    unlockAudio,
     setVolume,
     getVolume,
     getPlayerState,
