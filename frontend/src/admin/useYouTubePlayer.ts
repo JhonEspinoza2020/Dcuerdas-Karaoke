@@ -116,19 +116,49 @@ export function useYouTubePlayer(
     } else {
       p.loadVideoById(videoId);
     }
-    window.setTimeout(() => {
+    // Mute → play (autoplay permitido) → unmute + reintentos si el iframe quedó en pausa.
+    const intentar = (n: number) => {
       try {
-        // Mute primero: el autoplay del navegador suele permitir muted y luego subimos volumen.
         p.mute?.();
         p.playVideo?.();
       } catch {
         /* ignore */
       }
-    }, 50);
+      window.setTimeout(() => {
+        try {
+          const st = p.getPlayerState?.() ?? -1;
+          // 1 PLAYING, 3 BUFFERING — ya va; solo falta sonido.
+          if (st === 1 || st === 3) {
+            p.unMute?.();
+            if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+            return;
+          }
+          if (n < 10) intentar(n + 1);
+        } catch {
+          if (n < 10) intentar(n + 1);
+        }
+      }, 100 + n * 90);
+    };
+    window.setTimeout(() => intentar(0), 40);
   };
 
   const resume = () => {
-    playerRef.current?.playVideo?.();
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      p.playVideo?.();
+      // Si ya estaba muted por autoplay, subir sonido al reanudar.
+      window.setTimeout(() => {
+        try {
+          p.unMute?.();
+          if ((p.getVolume?.() ?? 0) < 5) p.setVolume?.(100);
+        } catch {
+          /* ignore */
+        }
+      }, 80);
+    } catch {
+      /* ignore */
+    }
   };
 
   const pause = () => {

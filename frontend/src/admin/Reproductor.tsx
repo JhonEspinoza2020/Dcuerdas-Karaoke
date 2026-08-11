@@ -17,6 +17,10 @@ import {
   marcarReanudarTrasRecarga,
   limpiarPosicionRepro,
 } from "./reproPosicion";
+import {
+  REPRO_CMD_CHANNEL,
+  consumirUnlockAudioReciente,
+} from "./abrirReproductorVentana";
 
 type Props = {
   readonly accessToken: string;
@@ -983,6 +987,78 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     iniciarRelleno();
   }, [poolVersion, ready, iniciarRelleno, visible]);
 
+  /** Pedido desde el click de “Reproductor” en el admin: sonar sin segundo click. */
+  const forzarSonidoYPlay = useCallback(() => {
+    if (!ready) return;
+    sesionActivaRef.current = true;
+    pausaUsuarioRef.current = false;
+    desbloquearAudioAnuncio();
+    unMuteRef.current();
+    resumeRef.current();
+    const vol = getVolumeRef.current();
+    if (vol < 5) setVolumeRef.current(100);
+
+    void (async () => {
+      if (hayPedidoEnCola()) {
+        // El efecto de cola encola; mientras tanto reanudar si ya hay video.
+        resumeRef.current();
+        unMuteRef.current();
+        return;
+      }
+      if (actualRef.current || rellenoActivoRef.current) {
+        resumeRef.current();
+        unMuteRef.current();
+        return;
+      }
+      if (poolRadioRef.current.length === 0) {
+        await cargarPoolRadio();
+      }
+      if (hayPedidoEnCola() || actualRef.current) {
+        resumeRef.current();
+        unMuteRef.current();
+        return;
+      }
+      if (!rellenoActivoRef.current) {
+        radioArrancadaRef.current = false;
+        iniciarRelleno();
+      } else {
+        resumeRef.current();
+        unMuteRef.current();
+      }
+    })();
+  }, [ready, desbloquearAudioAnuncio, cargarPoolRadio, iniciarRelleno]);
+
+  // Click en admin → BroadcastChannel / unlock: reanudar con sonido.
+  useEffect(() => {
+    if (!visible || !ready) return;
+    let ch: BroadcastChannel | null = null;
+    try {
+      ch = new BroadcastChannel(REPRO_CMD_CHANNEL);
+      ch.onmessage = (ev) => {
+        if (ev.data?.type === "play") forzarSonidoYPlay();
+      };
+    } catch {
+      /* ignore */
+    }
+    if (consumirUnlockAudioReciente()) {
+      forzarSonidoYPlay();
+    }
+    const onVis = () => {
+      if (document.visibilityState === "visible" && consumirUnlockAudioReciente()) {
+        forzarSonidoYPlay();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      try {
+        ch?.close();
+      } catch {
+        /* ignore */
+      }
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [visible, ready, forzarSonidoYPlay]);
+
   // Arranque real: solo al estar en la pestaña Reproductor Y con el player listo.
   useEffect(() => {
     if (!visible) {
@@ -997,26 +1073,23 @@ export function Reproductor({ accessToken, visible = true, onPlayingChange }: Pr
     desbloquearAudioAnuncio();
     reiniciarTimerMinutos();
 
-    if (!acabaDeAbrir) {
+    const pedirAuto = acabaDeAbrir || consumirUnlockAudioReciente();
+    if (!pedirAuto) {
       // No forzar resume aquí: al cambiar deps del efecto reanudaba encima de la pausa del admin.
       return;
     }
 
-    // Primera vez (o reentrada) en Reproductor: asegurar pool y arrancar.
-    void (async () => {
-      if (hayPedidoEnCola()) return; // el efecto de cola toma el pedido
-      if (poolRadioRef.current.length === 0) {
-        await cargarPoolRadio();
-      }
-      if (hayPedidoEnCola() || actualRef.current) return;
-      if (!rellenoActivoRef.current) {
-        radioArrancadaRef.current = false;
-        iniciarRelleno();
-      } else if (!pausaUsuarioRef.current) {
-        resumeRef.current();
-      }
-    })();
-  }, [visible, ready, iniciarRelleno, cargarPoolRadio, reiniciarTimerMinutos, desbloquearAudioAnuncio]);
+    // Primera vez / click reciente en Reproductor: arrancar ambiente o cola con sonido.
+    forzarSonidoYPlay();
+  }, [
+    visible,
+    ready,
+    iniciarRelleno,
+    cargarPoolRadio,
+    reiniciarTimerMinutos,
+    desbloquearAudioAnuncio,
+    forzarSonidoYPlay,
+  ]);
 
   const proximas = cola.filter((c) => c.estado === "pendiente");
 
