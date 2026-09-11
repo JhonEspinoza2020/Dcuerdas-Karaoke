@@ -8,7 +8,7 @@ Sistema de karaoke por QR — **D'cuerdas Resto-Bar**
 Vercel (React)  →  Supabase Edge Functions  →  Supabase Postgres + Realtime
 ```
 
-**No necesitamos Render ni Railway.** Todo el backend está en Supabase (plan free).
+**No necesitamos Render ni Railway.** Todo el backend está en Supabase
 
 ## Estado
 
@@ -38,4 +38,4 @@ Vercel (React)  →  Supabase Edge Functions  →  Supabase Postgres + Realtime
 
 ## Siguiente paso
 
-Armar el frontend React (cliente móvil) para Vercel.
+Armar el frontend React (cliente móvil)
