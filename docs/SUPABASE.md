@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |-------|-------|
-| **URL** | `https://igskpitfcybectomashf.supabase.co` |
+| **URL** | `` |
 | **Ref** | `igskpitfcybectomashf` |
 | **Estado** | ✅ Migraciones aplicadas |
 
