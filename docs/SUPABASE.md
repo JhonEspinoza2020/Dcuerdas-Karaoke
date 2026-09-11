@@ -5,7 +5,7 @@
 | Campo | Valor |
 |-------|-------|
 | **URL** | `` |
-| **Ref** | `igskpitfcybectomashf` |
+| **Ref** | `` |
 | **Estado** | ✅ Migraciones aplicadas |
 
 ## Tablas creadas
