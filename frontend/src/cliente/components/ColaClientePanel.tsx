@@ -9,6 +9,7 @@ export type ColaPublicaItem = {
   titulo_cancion: string;
   nombre_cliente: string;
   estado: string;
+  orden?: number | null;
 };
 
 type Props = {
@@ -39,10 +40,11 @@ export function ColaClientePanel({ cola, numeroMesa, compacto }: Props) {
 
   if (misIndices.length === 0 && !ahoraSuena) return null;
 
-  const proximaMia = misIndices.find(({ c }) => c.estado === "pendiente" || c.estado === "reproduciendo");
+  const mias = misIndices.filter(({ c }) => c.estado === "pendiente" || c.estado === "reproduciendo");
+  const proximaMia = mias[0];
   const idxMia = proximaMia?.i ?? -1;
 
-  // Vista mínima: una sola tarjeta con lo esencial.
+  // Vista mínima: lo que suena y todas las de esta mesa, no solo la primera.
   if (compacto) {
     return (
       <div className="cola-panel cola-panel--compact">
@@ -55,17 +57,17 @@ export function ColaClientePanel({ cola, numeroMesa, compacto }: Props) {
             </div>
           </div>
         )}
-        {proximaMia && proximaMia.c.estado !== "reproduciendo" && (
-          <div className="cola-linea cola-linea--tu">
+        {mias.filter(({ c }) => c.estado !== "reproduciendo").map(({ c, i }) => (
+          <div key={c.id} className="cola-linea cola-linea--tu">
             <ClockIcon size={14} />
             <div className="cola-linea-texto">
               <span className="cola-linea-label">
-                #{idxMia + 1} · {mensajeAntes(idxMia, proximaMia.c.estado)}
+                #{i + 1} · {mensajeAntes(i, c.estado)}
               </span>
-              <span className="cola-linea-titulo">{proximaMia.c.titulo_cancion}</span>
+              <span className="cola-linea-titulo">{c.titulo_cancion}</span>
             </div>
           </div>
-        )}
+        ))}
       </div>
     );
   }

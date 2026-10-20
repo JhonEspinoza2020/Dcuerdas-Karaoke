@@ -143,7 +143,7 @@ export const api = {
     nombre_cliente: string;
     saludo?: string;
     saludo_momento?: "inicio" | "final";
-  }) => post<ColaItem & { limite?: LimiteCola }>("encolar-cancion", payload),
+  }) => post<ColaItem & { limite?: LimiteCola; repetida?: boolean }>("encolar-cancion", payload),
 
   consultarLimiteCola: (
     numero_mesa: number,
@@ -185,6 +185,22 @@ export const api = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error al actualizar");
     return data as ColaItem;
+  },
+
+  /** Deja las canciones pendientes en este orden. La que está sonando no entra. */
+  guardarOrdenCola: async (accessToken: string, orden_ids: number[]) => {
+    const res = await fetch(FN("actualizar-estado-cola"), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        apikey: ANON,
+      },
+      body: JSON.stringify({ orden_ids }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? data.error ?? "Error al reordenar");
+    return data as { ok: boolean; cambio?: boolean };
   },
 
   /** El reproductor aprendió que YouTube bloquea este embed. */

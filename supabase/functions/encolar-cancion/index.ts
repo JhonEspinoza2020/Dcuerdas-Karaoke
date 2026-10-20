@@ -47,17 +47,54 @@ Deno.serve(async (req) => {
       return jsonResponse(limite);
     }
 
-    const limite = await consultarLimiteCola(supabase, mesa.id);
-
     validarHorario();
-
-    if (!limite.puede_encolar) {
-      return errorResponse("limite_cola_excedido", mensajeLimiteCola(limite), 429);
-    }
 
     const videoId = String(body.youtube_video_id ?? "").trim();
     if (videoId.length < 6) {
       return errorResponse("video_invalido", "Elige otra canción de la lista.", 400);
+    }
+
+    // Si recargan el celular y pulsan de nuevo, devolvemos la que ya entró.
+    const desdeRepetida = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: repetidas } = await supabase
+      .from("cola_reproduccion")
+      .select("*, mesas(numero_mesa)")
+      .eq("mesa_id", mesa.id)
+      .eq("youtube_video_id", videoId)
+      .eq("nombre_cliente", nombreCliente)
+      .eq("estado", "pendiente")
+      .gte("creado_en", desdeRepetida)
+      .order("creado_en", { ascending: false })
+      .limit(1);
+
+    if (repetidas && repetidas.length > 0) {
+      const previa = repetidas[0];
+      const { count: posPrevia } = await supabase
+        .from("cola_reproduccion")
+        .select("id", { count: "exact", head: true })
+        .in("estado", ["pendiente", "reproduciendo"])
+        .lte("creado_en", previa.creado_en);
+      const limitePrevia = await consultarLimiteCola(supabase, mesa.id);
+      return jsonResponse({
+        id: previa.id,
+        mesa_id: previa.mesa_id,
+        numero_mesa: previa.mesas?.numero_mesa,
+        youtube_video_id: previa.youtube_video_id,
+        titulo_cancion: previa.titulo_cancion,
+        nombre_cliente: previa.nombre_cliente,
+        saludo: previa.saludo,
+        saludo_momento: previa.saludo_momento,
+        estado: previa.estado,
+        creado_en: previa.creado_en,
+        posicion: posPrevia ?? 1,
+        limite: limitePrevia,
+        repetida: true,
+      });
+    }
+
+    const limite = await consultarLimiteCola(supabase, mesa.id);
+    if (!limite.puede_encolar) {
+      return errorResponse("limite_cola_excedido", mensajeLimiteCola(limite), 429);
     }
 
     const apiKey = pickYoutubeApiKey();

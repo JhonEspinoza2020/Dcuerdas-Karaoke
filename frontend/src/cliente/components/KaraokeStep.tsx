@@ -54,12 +54,58 @@ type Props = {
   onContinuar: () => void;
 };
 
+function ordenarColaPublica(filas: ColaPublicaItem[]): ColaPublicaItem[] {
+  return [...filas].sort((a, b) => {
+    const ra = a.estado === "reproduciendo" ? 0 : 1;
+    const rb = b.estado === "reproduciendo" ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    const ao = Number(a.orden);
+    const bo = Number(b.orden);
+    const aOk = Number.isFinite(ao) ? ao : Number.MAX_SAFE_INTEGER;
+    const bOk = Number.isFinite(bo) ? bo : Number.MAX_SAFE_INTEGER;
+    if (aOk !== bOk) return aOk - bOk;
+    return a.id - b.id;
+  });
+}
+
 type ExitoState = {
   id: number;
   posicion: number;
   titulo: string;
   antesDeTi: number;
+  repetida?: boolean;
 };
+
+function claveEnvio(numeroMesa: number): string {
+  return `dcuerdas-envio-${numeroMesa}`;
+}
+
+function guardarEnvio(numeroMesa: number, exito: ExitoState) {
+  try {
+    sessionStorage.setItem(claveEnvio(numeroMesa), JSON.stringify({ ...exito, ts: Date.now() }));
+  } catch {
+    /* El aviso igual se muestra en esta pantalla. */
+  }
+}
+
+function leerEnvio(numeroMesa: number): ExitoState | null {
+  try {
+    const raw = sessionStorage.getItem(claveEnvio(numeroMesa));
+    if (!raw) return null;
+    const data = JSON.parse(raw) as ExitoState & { ts?: number };
+    if (!data?.id || !data.titulo) return null;
+    if (typeof data.ts === "number" && Date.now() - data.ts > 3 * 60 * 1000) return null;
+    return {
+      id: data.id,
+      posicion: data.posicion,
+      titulo: data.titulo,
+      antesDeTi: data.antesDeTi,
+      repetida: data.repetida,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function textoBotonEnviar(
   loading: boolean,
@@ -107,7 +153,7 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const [buscando, setBuscando] = useState(false);
   const [esperandoEscritura, setEsperandoEscritura] = useState(false);
   const [escuchando, setEscuchando] = useState(false);
-  const [exito, setExito] = useState<ExitoState | null>(null);
+  const [exito, setExito] = useState<ExitoState | null>(() => leerEnvio(numeroMesa));
   const [cola, setCola] = useState<ColaPublicaItem[]>([]);
   const [limiteCola, setLimiteCola] = useState<LimiteCola | null>(null);
   const envioRef = useRef<HTMLDivElement | null>(null);
@@ -132,9 +178,8 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const actualizarCola = useCallback(async () => {
     const { data } = await supabase
       .from("cola_publica")
-      .select("id, numero_mesa, etiqueta, tipo, titulo_cancion, nombre_cliente, estado")
-      .order("creado_en");
-    if (data) setCola(data as ColaPublicaItem[]);
+      .select("id, numero_mesa, etiqueta, tipo, titulo_cancion, nombre_cliente, estado, orden");
+    if (data) setCola(ordenarColaPublica(data as ColaPublicaItem[]));
     void actualizarLimite();
   }, [actualizarLimite]);
 
@@ -320,25 +365,40 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       if (checkSaludo.valor) marcarRateLimit(`saludo-${numeroMesa}-${nombre}`);
       if (res.limite) setLimiteCola(res.limite);
       else void actualizarLimite();
-      await actualizarCola();
-      const { data } = await supabase
-        .from("cola_publica")
-        .select("id, numero_mesa, etiqueta, tipo, titulo_cancion, nombre_cliente, estado")
-        .order("creado_en");
-      const colaActual = (data ?? []) as ColaPublicaItem[];
-      const idx = colaActual.findIndex((c) => c.id === res.id);
-      setExito({
+      const enviado: ExitoState = {
         id: res.id,
-        posicion: idx >= 0 ? idx + 1 : (res.posicion ?? 1),
+        posicion: res.posicion ?? 1,
         titulo: res.titulo_cancion,
-        antesDeTi: idx >= 0 ? idx : 0,
-      });
-      setCola(colaActual);
+        antesDeTi: Math.max(0, (res.posicion ?? 1) - 1),
+        repetida: res.repetida,
+      };
+      setExito(enviado);
+      guardarEnvio(numeroMesa, enviado);
       setSeleccionado(null);
       setSaludo("");
       setSaludoMomento("inicio");
       setResultados([]);
       setQuery("");
+      try {
+        await actualizarCola();
+        const { data } = await supabase
+          .from("cola_publica")
+          .select("id, numero_mesa, etiqueta, tipo, titulo_cancion, nombre_cliente, estado, orden");
+        const colaActual = ordenarColaPublica((data ?? []) as ColaPublicaItem[]);
+        const idx = colaActual.findIndex((c) => c.id === res.id);
+        if (data) setCola(colaActual);
+        if (idx >= 0) {
+          const fino: ExitoState = {
+            ...enviado,
+            posicion: idx + 1,
+            antesDeTi: idx,
+          };
+          setExito(fino);
+          guardarEnvio(numeroMesa, fino);
+        }
+      } catch {
+        /* La canción ya quedó en la cola. El aviso no depende de esta consulta. */
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al encolar";
       const videoNoValido = /no se puede reproducir|video_no_reproducible|bloquea/i.test(msg);
@@ -366,6 +426,11 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
   const agregarOtra = () => {
     setExito(null);
     setSeleccionado(null);
+    try {
+      sessionStorage.removeItem(claveEnvio(numeroMesa));
+    } catch {
+      /* ignore */
+    }
   };
 
   const bloqueado = limiteCola !== null && !limiteCola.puede_encolar;
@@ -389,7 +454,9 @@ export function KaraokeStep({ numeroMesa, token, nombre, modo, onContinuar }: Pr
       {exito ? (
         <div className="exito-cola-card">
           <div className="exito-cola-icon"><CheckIcon size={28} /></div>
-          <div className="exito-cola-titulo">{es.cola.enviada}</div>
+          <div className="exito-cola-titulo">
+            {exito.repetida ? "Ya estaba en la cola" : es.cola.enviada}
+          </div>
           <div className="exito-cola-cancion">{exito.titulo}</div>
           <p className="exito-cola-resumen">
             #{exito.posicion}

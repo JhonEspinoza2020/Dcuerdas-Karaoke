@@ -37,9 +37,7 @@ export function PantallaReproductor() {
 
   if (cargando) {
     return (
-      <div className="admin-login">
-        <p className="panel-empty">Cargando...</p>
-      </div>
+      <div className="admin-login" />
     );
   }
 

@@ -13,12 +13,23 @@ Deno.serve(async (req) => {
     const { data, error } = await supabase
       .from("cola_reproduccion")
       .select("*, mesas(numero_mesa, tipo, etiqueta)")
-      .in("estado", ["pendiente", "reproduciendo"])
-      .order("creado_en", { ascending: true });
+      .in("estado", ["pendiente", "reproduciendo"]);
 
     if (error) throw error;
 
-    const canciones = (data ?? []).map((c, idx) => {
+    const filas = [...(data ?? [])].sort((a, b) => {
+      const ra = a.estado === "reproduciendo" ? 0 : 1;
+      const rb = b.estado === "reproduciendo" ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      const ao = Number(a.orden);
+      const bo = Number(b.orden);
+      const aOk = Number.isFinite(ao) ? ao : Number.MAX_SAFE_INTEGER;
+      const bOk = Number.isFinite(bo) ? bo : Number.MAX_SAFE_INTEGER;
+      if (aOk !== bOk) return aOk - bOk;
+      return new Date(a.creado_en).getTime() - new Date(b.creado_en).getTime();
+    });
+
+    const canciones = filas.map((c, idx) => {
       const tipo = c.mesas?.tipo ?? "mesa";
       const esLocal = tipo === "local";
       return {

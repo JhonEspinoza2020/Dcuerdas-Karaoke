@@ -26,6 +26,14 @@ Deno.serve(async (req) => {
     await verifyAdminAuth(req);
     const supabase = createServiceClient();
     const porId = new Map<string, VideoAmbiente>();
+    // El ambiente solo usa lo cantado en los últimos 7 días. Lo más viejo se borra
+    // al pedir la radio, así el historial no crece para siempre.
+    const desde = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    await supabase
+      .from("cola_reproduccion")
+      .delete()
+      .eq("estado", "completada")
+      .lt("creado_en", desde);
 
     const page = 1000;
     let from = 0;
@@ -33,6 +41,7 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase
         .from("cola_reproduccion")
         .select("youtube_video_id, titulo_cancion")
+        .gte("creado_en", desde)
         .order("creado_en", { ascending: false })
         .range(from, from + page - 1);
 

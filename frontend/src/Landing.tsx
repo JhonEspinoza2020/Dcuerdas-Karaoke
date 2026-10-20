@@ -63,8 +63,6 @@ export function Landing() {
           </div>
           <h2>Personal / Dueño</h2>
 
-          {cargando && <p className="panel-empty">Cargando...</p>}
-
           {!cargando && !user && (
             <>
               <p>{es.auth.adminSub}</p>

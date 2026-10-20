@@ -104,10 +104,19 @@ export async function buscarCacheAproximado(
 export async function guardarCacheYoutube(termino: string, resultados: VideoCacheItem[]): Promise<void> {
   const supabase = createServiceClient();
   const ahora = new Date();
-  await supabase.from("youtube_cache").upsert({
-    termino,
-    resultados,
-    expira_en: diasDesde(ahora, TTL_DIAS).toISOString(),
-    creado_en: ahora.toISOString(),
-  });
+  const { data: prev } = await supabase
+    .from("youtube_cache")
+    .select("creado_en")
+    .eq("termino", termino)
+    .maybeSingle();
+
+  await supabase.from("youtube_cache").upsert(
+    {
+      termino,
+      resultados,
+      expira_en: diasDesde(ahora, TTL_DIAS).toISOString(),
+      creado_en: (prev?.creado_en as string | undefined) ?? ahora.toISOString(),
+    },
+    { onConflict: "termino" },
+  );
 }

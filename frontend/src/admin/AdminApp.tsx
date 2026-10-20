@@ -149,9 +149,7 @@ export function AdminApp() {
 
   if (cargando) {
     return (
-      <div className="admin-login">
-        <p className="panel-empty">Cargando...</p>
-      </div>
+      <div className="admin-login" />
     );
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, supabase, type ClienteFrecuente, type LlegadaHoy } from "@dcuerdas/shared";
 import { StarIcon } from "./AdminIcons";
+import { SkeletonRows, useEsqueletoSiDemora } from "../components/Skeleton";
 
 type Props = { accessToken: string };
 
@@ -19,6 +20,8 @@ export function ClientesPanel({ accessToken }: Props) {
   const [llegadas, setLlegadas] = useState<LlegadaHoy[]>([]);
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const esqueleto = useEsqueletoSiDemora(cargando);
 
   const cargar = useCallback(async () => {
     try {
@@ -28,6 +31,8 @@ export function ClientesPanel({ accessToken }: Props) {
       setError("");
     } catch {
       setError("No se pudieron cargar los clientes");
+    } finally {
+      setCargando(false);
     }
   }, [accessToken]);
 
@@ -46,7 +51,7 @@ export function ClientesPanel({ accessToken }: Props) {
   );
 
   return (
-    <div className="admin-panel">
+    <div className="admin-panel clientes-panel">
       <header className="admin-panel-head">
         <h1>Clientes</h1>
       </header>
@@ -60,12 +65,15 @@ export function ClientesPanel({ accessToken }: Props) {
         onChange={(e) => setFiltro(e.target.value)}
       />
 
-      <div className="admin-grid-2">
-        <section className="admin-card">
-          <h2>Hoy ({llegadas.length})</h2>
-          {llegadas.length === 0 ? (
-            <p className="panel-empty">Sin llegadas.</p>
+      <div className="admin-grid-2 clientes-grid">
+        <section className="admin-card clientes-card clientes-card--hoy">
+          <h2>Hoy ({cargando ? "…" : llegadas.length})</h2>
+          {esqueleto ? (
+            <SkeletonRows filas={5} />
+          ) : cargando ? null : llegadas.length === 0 ? (
+            <p className="panel-empty clientes-vacio">Sin llegadas.</p>
           ) : (
+            <div className="clientes-scroll">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -92,14 +100,18 @@ export function ClientesPanel({ accessToken }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
 
-        <section className="admin-card">
-          <h2>Frecuentes ({frecuentesFiltrados.length})</h2>
-          {frecuentesFiltrados.length === 0 ? (
-            <p className="panel-empty">Sin frecuentes.</p>
+        <section className="admin-card clientes-card clientes-card--frecuentes">
+          <h2>Frecuentes ({cargando ? "…" : frecuentesFiltrados.length})</h2>
+          {esqueleto ? (
+            <SkeletonRows filas={8} />
+          ) : cargando ? null : frecuentesFiltrados.length === 0 ? (
+            <p className="panel-empty clientes-vacio">Sin frecuentes.</p>
           ) : (
+            <div className="clientes-scroll">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -122,6 +134,7 @@ export function ClientesPanel({ accessToken }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
       </div>

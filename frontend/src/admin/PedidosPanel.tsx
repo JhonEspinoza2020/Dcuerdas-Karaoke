@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adminApi, supabase, type PedidoAdmin, type PedidosFiltro } from "@dcuerdas/shared";
+import { SkeletonRows, useEsqueletoSiDemora } from "../components/Skeleton";
 
 type Props = {
   readonly accessToken: string;
@@ -81,6 +82,7 @@ export function PedidosPanel({ accessToken, onActiveCountChange }: Props) {
   const [actualizando, setActualizando] = useState<number | null>(null);
   const [ahora, setAhora] = useState(() => Date.now());
   const [cargando, setCargando] = useState(true);
+  const esqueleto = useEsqueletoSiDemora(cargando && pedidos.length === 0);
   const [filtro, setFiltro] = useState<PedidosFiltro>("jornada");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
@@ -221,9 +223,9 @@ export function PedidosPanel({ accessToken, onActiveCountChange }: Props) {
 
       {error && <div className="error-msg">{error}</div>}
 
-      {cargando && pedidos.length === 0 ? (
-        <p className="panel-empty">Cargando pedidos…</p>
-      ) : (
+      {esqueleto ? (
+        <SkeletonRows filas={6} />
+      ) : cargando && pedidos.length === 0 ? null : (
         <>
           <div className="pedidos-board">
             {COLUMNAS.map((col) => {

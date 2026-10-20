@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, api, supabase, zonaCola, type AdminResumen, type ColaItem } from "@dcuerdas/shared";
 import { StarIcon, ClockIcon, UsersIcon, QueueIcon, FlameIcon } from "./AdminIcons";
+import { SkeletonRows, useEsqueletoSiDemora } from "../components/Skeleton";
 import { abrirReproductorVentana } from "./abrirReproductorVentana";
 import { mostrarReproductorBubble } from "./ReproductorBubble";
 import {
@@ -120,10 +121,11 @@ export function DashboardPanel({ accessToken, onAbrirCola }: Props) {
     };
   }, [cargar, cargarCola]);
 
+  const esqueleto = useEsqueletoSiDemora(!data && !error);
   if (!data) {
     return (
       <div className="admin-panel">
-        {error ? <div className="error-msg">{error}</div> : <p className="panel-empty">Cargando...</p>}
+        {error ? <div className="error-msg">{error}</div> : esqueleto ? <SkeletonRows filas={8} conAvatar /> : null}
       </div>
     );
   }
